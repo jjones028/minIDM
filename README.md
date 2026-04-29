@@ -57,7 +57,7 @@ A simple Identity Management (IDM) system.
     ```
 6.  **Start the server:**
     ```bash
-    go run main.go
+    go run cmd/server/main.go
     ```
 
 The API will be available at `http://localhost:8080`.
