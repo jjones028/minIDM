@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	db "my-idm/db/sqlc"
+
+	"github.com/google/uuid"
 )
 
 type AddRegistrationCommand struct {
@@ -28,7 +30,7 @@ func (h *AddRegistrationHandler) Handle(ctx context.Context, cmd AddRegistration
 
 	// 2. Data: Call the generated SQL function
 	user, err := h.q.CreateIdentity(ctx, db.CreateIdentityParams{
-		SubjectID: "auth0|" + cmd.Email, // Simplified for now
+		SubjectID: uuid.New().String(),
 		Email:     cmd.Email,
 		PwHash:    string(hashed),
 	})
