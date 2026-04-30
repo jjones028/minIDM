@@ -9,23 +9,38 @@ import (
 // Register initializes the identity feature and registers its routes.
 func Register(mux *http.ServeMux, queries *db.Queries) {
 	addRegistrationHandler := NewAddRegistrationHandler(queries)
-	api := NewAPI(addRegistrationHandler)
+	listIdentitiesHandler := NewListIdentitiesHandler(queries)
+	api := NewAPI(addRegistrationHandler, listIdentitiesHandler)
 	api.RegisterRoutes(mux)
 }
 
 // API handles HTTP requests for the identity feature.
 type API struct {
-	register *AddRegistrationHandler
+	addRegistration *AddRegistrationHandler
+	listIdentities  *ListIdentitiesHandler
 }
 
-func NewAPI(register *AddRegistrationHandler) *API {
+func NewAPI(addRegistration *AddRegistrationHandler, listIdentities *ListIdentitiesHandler) *API {
 	return &API{
-		register: register,
+		addRegistration: addRegistration,
+		listIdentities:  listIdentities,
 	}
 }
 
 func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/register", a.Register)
+	mux.HandleFunc("GET /api/identities", a.List)
+}
+
+func (a *API) List(w http.ResponseWriter, r *http.Request) {
+	identities, err := a.listIdentities.Handle(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(identities)
 }
 
 func (a *API) Register(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +64,7 @@ func (a *API) Register(w http.ResponseWriter, r *http.Request) {
 		Password: req.Password,
 	}
 
-	_, err := a.register.Handle(r.Context(), cmd)
+	_, err := a.addRegistration.Handle(r.Context(), cmd)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

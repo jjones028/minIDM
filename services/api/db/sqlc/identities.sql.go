@@ -75,3 +75,36 @@ func (q *Queries) GetIdentityBySub(ctx context.Context, subjectID string) (Ident
 	)
 	return i, err
 }
+
+const listIdentities = `-- name: ListIdentities :many
+SELECT id, subject_id, email, pw_hash, is_enabled, created_at, updated_at FROM identities
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListIdentities(ctx context.Context) ([]Identity, error) {
+	rows, err := q.db.Query(ctx, listIdentities)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Identity
+	for rows.Next() {
+		var i Identity
+		if err := rows.Scan(
+			&i.ID,
+			&i.SubjectID,
+			&i.Email,
+			&i.PwHash,
+			&i.IsEnabled,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
