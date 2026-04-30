@@ -1,10 +1,12 @@
 # my-idm
 
-A simple Identity Management (IDM) system.
+A simple Identity Management (IDM) system, organized by features.
 
 ## Project Structure
 
 - `services/api`: Go-based backend API.
+  - `internal/app`: Core server infrastructure and router assembly.
+  - `internal/identity`: Identity feature containing API handlers, CQRS commands, and business logic.
 - `web`: Frontend application (currently empty).
 
 ## Features
@@ -21,6 +23,7 @@ A simple Identity Management (IDM) system.
   - [sqlc](https://sqlc.dev/) - Type-safe Go from SQL.
   - [goose](https://github.com/pressly/goose) - Database migrations.
 - **Crypto:** [Argon2id](https://en.wikipedia.org/wiki/Argon2) for password hashing.
+- **Architecture:** CQRS (Command Query Responsibility Segregation) with feature-based organization.
 
 ## Getting Started
 
@@ -28,8 +31,8 @@ A simple Identity Management (IDM) system.
 
 - Go 1.26.1+
 - PostgreSQL
-- [sqlc](https://sqlc.dev/docs/install) (optional, for code generation)
-- [goose](https://github.com/pressly/goose#install) (optional, for migrations)
+- [sqlc](https://sqlc.dev/docs/install)
+- [goose](https://github.com/pressly/goose#install)
 
 ### Backend Setup
 
@@ -43,7 +46,7 @@ A simple Identity Management (IDM) system.
     ```
 ### Development Mode (Recommended)
 
-The project includes a "Dev Mode" that automatically manages your database using Testcontainers and the project's `compose.yaml`. This ensures your development database is always ready and migrated.
+The project includes a "Dev Mode" that manages your database using Testcontainers and runs the API server directly in your terminal for easy debugging.
 
 1.  **Ensure Docker or Podman Desktop is running.**
 2.  **Run the dev command:**
@@ -54,9 +57,8 @@ The project includes a "Dev Mode" that automatically manages your database using
 
 This will:
 - Start PostgreSQL via Compose (using Testcontainers).
-- Use a local volume `./postgres_data` (relative to root) to persist data.
-- Automatically run migrations.
-- Start the API server with the correct `DATABASE_URL`.
+- Automatically run migrations via `goose`.
+- Start the API server locally on `:8080` with the correct `DATABASE_URL` configured.
 
 ### Manual Database Setup (Optional)
 
