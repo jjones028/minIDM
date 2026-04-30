@@ -1,0 +1,20 @@
+volumes:
+  idm_database:
+  
+services:
+  db:
+    container_name: my-idm-db
+    image: postgres:18
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: idm
+    ports:
+      - "5432:5432"
+    volumes:
+      - idm_database:/var/lib/postgresql
+    labels:
+      com.my-idm.project: "my-idm"
+      com.my-idm.service: "db"
+      com.my-idm.managed-by: "testcontainers"

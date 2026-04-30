@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	db "my-idm/db/sqlc"
 	"my-idm/internal/identity"
 	"net/http"
+	"os"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -14,7 +16,14 @@ func main() {
 	ctx := context.Background()
 
 	// Connect to Postgres using pgx
-	conn, _ := pgx.Connect(ctx, "postgres://user:pass@localhost:5432/idm")
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://user:pass@localhost:5432/idm"
+	}
+	conn, err := pgx.Connect(ctx, dbURL)
+	if err != nil {
+		panic(fmt.Sprintf("Unable to connect to database: %v", err))
+	}
 	defer conn.Close(ctx)
 
 	// Instantiate the generated SQL queries

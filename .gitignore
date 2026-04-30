@@ -1,0 +1,36 @@
+# Go
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+
+# JetBrains (IntelliJ, GoLand)
+.idea/
+*.iws
+*.iml
+*.ipr
+cmake-build-*/
+out/
+
+# VS Code
+.vscode/
+*.code-workspace
+.history/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Project Specific
+postgres_data/
+/tmp/my-idm-postgres-data/

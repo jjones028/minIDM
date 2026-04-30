@@ -41,24 +41,44 @@ A simple Identity Management (IDM) system.
     ```bash
     go mod download
     ```
-3.  **Database Configuration:**
-    The database connection string is currently configured in `main.go`. Ensure you have a running PostgreSQL instance and update the connection string if necessary:
-    ```go
-    conn, _ := pgx.Connect(ctx, "postgres://user:pass@localhost:5432/idm")
+### Development Mode (Recommended)
+
+The project includes a "Dev Mode" that automatically manages your database using Testcontainers and the project's `compose.yaml`. This ensures your development database is always ready and migrated.
+
+1.  **Ensure Docker or Podman Desktop is running.**
+2.  **Run the dev command:**
+    ```bash
+    cd services/api
+    go run cmd/dev/main.go
     ```
+
+This will:
+- Start PostgreSQL via Compose (using Testcontainers).
+- Use a local volume `./postgres_data` (relative to root) to persist data.
+- Automatically run migrations.
+- Start the API server with the correct `DATABASE_URL`.
+
+### Manual Database Setup (Optional)
+
+For manual control, you can start a PostgreSQL instance using Compose from the root directory:
+```bash
+docker compose up -d
+```
+The database will be available at `localhost:5432` with a persistent volume `./postgres_data`.
+
+### Podman Note
+
+If you are using **Podman Desktop**, the project automatically sets `TESTCONTAINERS_RYUK_DISABLED=true` to ensure compatibility with Podman's default networking. If you encounter issues, ensure your Podman machine is started and the `DOCKER_HOST` environment variable is correctly set (Podman Desktop usually handles this).
+
 4.  **Run migrations:**
     ```bash
     goose -dir db/migrations postgres "postgres://user:pass@localhost:5432/idm" up
     ```
-5.  **Generate SQL code (optional):**
-    If you modify the SQL queries in `db/queries/`, regenerate the Go code using:
-    ```bash
-    sqlc generate
-    ```
-6.  **Start the server:**
+5.  **Start the server:**
     ```bash
     go run cmd/server/main.go
     ```
+
 
 The API will be available at `http://localhost:8080`.
 
