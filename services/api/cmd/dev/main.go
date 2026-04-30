@@ -40,11 +40,11 @@ func main() {
 
 	// Ensure the stack is up
 	// Using ForExposedPort is more reliable for reused containers than ForLog
-	err = stack.WaitForService("db", wait.ForExposedPort().WithStartupTimeout(10*time.Second)).
+	err = stack.WaitForService("db", wait.ForExposedPort().WithStartupTimeout(60*time.Second)).
 		Up(ctx, compose.Wait(true))
 
 	if err != nil {
-		// If it's already running, Up might still be successful or we can continue
+		// If it's already running, Up might still be successful and we can continue
 		fmt.Printf("ℹ️  Note: Compose Up returned: %v (continuing...)\n", err)
 	}
 

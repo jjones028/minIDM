@@ -1,18 +1,15 @@
 import { useState, useEffect } from 'react';
-import { getIdentities, registerIdentity } from './api';
+import { getIdentities, registerIdentity, type Identity } from './api';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { AxiosError } from 'axios';
 
 function App() {
-  const [identities, setIdentities] = useState([]);
+  const [identities, setIdentities] = useState<Identity[]>([]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-
-  useEffect(() => {
-    fetchIdentities();
-  }, []);
 
   const fetchIdentities = async () => {
     try {
@@ -23,7 +20,27 @@ function App() {
     }
   };
 
-  const handleRegister = async (e) => {
+  useEffect(() => {
+    let ignore = false;
+    const load = async () => {
+      try {
+        const { data } = await getIdentities();
+        if (!ignore) {
+          setIdentities(data || []);
+        }
+      } catch (error) {
+        if (!ignore) {
+          console.error('Failed to fetch identities', error);
+        }
+      }
+    };
+    load();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await registerIdentity({ email, password });
@@ -31,7 +48,8 @@ function App() {
       setPassword('');
       fetchIdentities();
     } catch (error) {
-      alert('Registration failed: ' + (error.response?.data || error.message));
+      const axiosError = error as AxiosError<string>;
+      alert('Registration failed: ' + (axiosError.response?.data || axiosError.message));
     }
   };
 
