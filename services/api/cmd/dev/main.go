@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"my-idm/internal/app"
+
 	"github.com/testcontainers/testcontainers-go/modules/compose"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
@@ -75,14 +77,9 @@ func main() {
 		fmt.Printf("⚠️  Migration failed (ensure goose is installed and in PATH): %v\n", err)
 	}
 
-	// Start the API server
+	// Start the API server directly in the same process for debugging
 	fmt.Println("📡 Starting API server...")
-	serverCmd := exec.Command("go", "run", "cmd/server/main.go")
-	serverCmd.Env = append(os.Environ(), "DATABASE_URL="+connStr)
-	serverCmd.Stdout = os.Stdout
-	serverCmd.Stderr = os.Stderr
-
-	if err := serverCmd.Run(); err != nil {
+	if err := app.Run(ctx, connStr); err != nil {
 		log.Fatalf("server exited with error: %v", err)
 	}
 }
