@@ -32,7 +32,7 @@ func main() {
 
 	stack, err := compose.NewDockerComposeWith(
 		compose.WithStackFiles(composeFile),
-		compose.StackIdentifier("minIDM"),
+		compose.StackIdentifier("minidm"),
 	)
 	if err != nil {
 		log.Fatalf("failed to initialize compose stack: %v", err)
