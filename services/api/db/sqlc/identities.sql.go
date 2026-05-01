@@ -9,6 +9,17 @@ import (
 	"context"
 )
 
+const countIdentities = `-- name: CountIdentities :one
+SELECT COUNT(*) FROM identities
+`
+
+func (q *Queries) CountIdentities(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countIdentities)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createIdentity = `-- name: CreateIdentity :one
 INSERT INTO identities (subject_id, email, pw_hash)
 VALUES ($1, $2, $3)

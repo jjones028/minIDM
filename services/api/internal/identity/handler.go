@@ -7,11 +7,12 @@ import (
 )
 
 // Register initializes the identity feature and registers its routes.
-func Register(mux *http.ServeMux, queries *db.Queries) {
+// protect wraps handlers that require authentication and authorization.
+func Register(mux *http.ServeMux, queries *db.Queries, protect func(http.Handler) http.Handler) {
 	addRegistrationHandler := NewAddRegistrationHandler(queries)
 	listIdentitiesHandler := NewListIdentitiesHandler(queries)
 	api := NewAPI(addRegistrationHandler, listIdentitiesHandler)
-	api.RegisterRoutes(mux)
+	api.RegisterRoutes(mux, protect)
 }
 
 // API handles HTTP requests for the identity feature.
@@ -27,9 +28,9 @@ func NewAPI(addRegistration *AddRegistrationHandler, listIdentities *ListIdentit
 	}
 }
 
-func (a *API) RegisterRoutes(mux *http.ServeMux) {
+func (a *API) RegisterRoutes(mux *http.ServeMux, protect func(http.Handler) http.Handler) {
 	mux.HandleFunc("POST /api/register", a.Register)
-	mux.HandleFunc("GET /api/identities", a.List)
+	mux.Handle("GET /api/identities", protect(http.HandlerFunc(a.List)))
 }
 
 func (a *API) List(w http.ResponseWriter, r *http.Request) {

@@ -14,3 +14,6 @@ WHERE subject_id = $1 LIMIT 1;
 -- name: ListIdentities :many
 SELECT * FROM identities
 ORDER BY created_at DESC;
+
+-- name: CountIdentities :one
+SELECT COUNT(*) FROM identities;

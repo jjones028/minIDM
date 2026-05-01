@@ -2,8 +2,10 @@ package identity
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
+	"strings"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -16,6 +18,38 @@ const (
 	SaltLength  = 16
 	KeyLength   = 32
 )
+
+func VerifyPassword(password, encoded string) (bool, error) {
+	parts := strings.Split(encoded, "$")
+	// Format: $argon2id$v=19$m=65536,t=3,p=2$<salt>$<hash>
+	if len(parts) != 6 || parts[1] != "argon2id" {
+		return false, fmt.Errorf("invalid hash format")
+	}
+
+	var version int
+	if _, err := fmt.Sscanf(parts[2], "v=%d", &version); err != nil {
+		return false, fmt.Errorf("invalid version: %w", err)
+	}
+
+	var memory, iterations uint32
+	var parallelism uint8
+	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &memory, &iterations, &parallelism); err != nil {
+		return false, fmt.Errorf("invalid params: %w", err)
+	}
+
+	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
+	if err != nil {
+		return false, fmt.Errorf("invalid salt: %w", err)
+	}
+
+	hash, err := base64.RawStdEncoding.DecodeString(parts[5])
+	if err != nil {
+		return false, fmt.Errorf("invalid hash: %w", err)
+	}
+
+	computed := argon2.IDKey([]byte(password), salt, iterations, memory, parallelism, uint32(len(hash)))
+	return subtle.ConstantTimeCompare(computed, hash) == 1, nil
+}
 
 func HashPassword(password string) (string, error) {
 	salt := make([]byte, SaltLength)
