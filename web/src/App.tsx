@@ -57,7 +57,7 @@ function App() {
     <div className="min-h-screen p-4 md:p-12">
       <div className="max-w-5xl mx-auto space-y-10">
         <header className="space-y-2">
-          <h1 className="text-5xl font-extrabold tracking-tight font-heading">Identity Hub</h1>
+          <h1 className="text-5xl font-extrabold tracking-tight font-heading">minidm</h1>
           <p className="text-lg text-muted-foreground">Manage your secure identities with ease and precision.</p>
         </header>
         

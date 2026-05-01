@@ -1,4 +1,4 @@
-# minIDM
+# minidm
 
 A simple Identity Management (IDM) system, organized by features.
 
