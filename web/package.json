@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
-    "@fontsource-variable/noto-serif": "^5.2.9",
+    "@fontsource-variable/geist": "^5.2.8",
     "@radix-ui/react-slot": "^1.2.4",
     "axios": "^1.15.2",
     "class-variance-authority": "^0.7.1",
@@ -28,6 +28,7 @@
     "@eslint/js": "^10.0.1",
     "@tailwindcss/postcss": "^4.2.4",
     "@tailwindcss/vite": "^4.2.4",
+    "@types/node": "^25.6.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",

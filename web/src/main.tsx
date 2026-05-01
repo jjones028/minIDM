@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import '@fontsource-variable/noto-serif'
+import '@fontsource-variable/geist'
 import './index.css'
 import App from './App'
 import { ThemeProvider } from './components/theme-provider'
