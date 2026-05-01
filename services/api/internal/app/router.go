@@ -10,8 +10,11 @@ import (
 func NewHandler(queries *db.Queries) http.Handler {
 	mux := http.NewServeMux()
 
-	// Register Features
+	// Register API Features
 	identity.Register(mux, queries)
+
+	// Catch-all for Frontend
+	mux.Handle("/", StaticHandler())
 
 	// Simple CORS Middleware
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

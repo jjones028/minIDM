@@ -1,0 +1,78 @@
+version: '3'
+
+vars:
+  API_DIR: services/api
+  WEB_DIR: web
+  EMBED_DIR: services/api/internal/app/dist
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+
+  # --- Development ---
+  dev:
+    desc: Run both backend and frontend in development mode
+    deps: [dev:api, dev:web]
+
+  dev:api:
+    desc: Run the Go API in dev mode (manages its own DB)
+    dir: "{{.API_DIR}}"
+    cmds:
+      - go run cmd/dev/main.go
+
+  dev:web:
+    desc: Run the Vite frontend
+    dir: "{{.WEB_DIR}}"
+    cmds:
+      - npm run dev
+
+  # --- Backend Tools ---
+  gen:
+    desc: Generate SQLC code and run migrations
+    dir: "{{.API_DIR}}"
+    cmds:
+      - sqlc generate
+      - task: db:migrate
+
+  db:migrate:
+    desc: Run database migrations using goose
+    dir: "{{.API_DIR}}"
+    cmds:
+      - goose -dir db/migrations postgres "$DATABASE_URL" up
+    preconditions:
+      - sh: 'test -n "$DATABASE_URL"'
+        msg: "DATABASE_URL environment variable is required for manual migrations"
+
+  # --- Build & Install ---
+  install:
+    desc: Install all dependencies
+    cmds:
+      - cd {{.API_DIR}} && go mod download
+      - cd {{.WEB_DIR}} && npm install
+
+  build:
+    desc: Build the entire project for production
+    cmds:
+      - task: build:web
+      - task: build:api
+
+  build:api:
+    desc: Build the Go API binary with embedded frontend
+    dir: "{{.API_DIR}}"
+    cmds:
+      # Copy web dist into internal app for embedding
+      - rm -rf internal/app/dist/*
+      - cp -r ../../web/dist/* internal/app/dist/
+      - go build -o bin/server cmd/server/main.go
+    sources:
+      - "cmd/server/**/*.go"
+      - "internal/**/*.go"
+      - "../../web/dist/**/*"
+
+  build:web:
+    desc: Build the Vite production bundle
+    dir: "{{.WEB_DIR}}"
+    cmds:
+      - npm run build

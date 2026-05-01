@@ -1,0 +1,2 @@
+internal/app/dist/*
+!internal/app/dist/.gitkeep
