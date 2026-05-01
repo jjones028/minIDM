@@ -7,7 +7,15 @@ A simple Identity Management (IDM) system, organized by features.
 - `services/api`: Go-based backend API.
   - `internal/app`: Core server infrastructure and router assembly.
   - `internal/identity`: Identity feature containing API handlers, CQRS commands, and business logic.
-- `web`: Frontend application (currently empty).
+- `web`: React-based frontend application (Vite, Tailwind CSS, Shadcn/ui).
+
+## Build System
+
+This project uses [go-task](https://taskfile.dev/) for orchestration. The `Taskfile.yml` in the root directory manages building, development, and code generation for both backend and frontend.
+
+- **Run all:** `task`
+- **Build frontend:** `task web:build`
+- **Build backend:** `task api:build`
 
 ## Features
 
@@ -17,8 +25,9 @@ A simple Identity Management (IDM) system, organized by features.
 
 ## Tech Stack
 
-- **Language:** [Go](https://go.dev/) 1.26.1
-- **Database:** [PostgreSQL](https://www.postgresql.org/)
+- **Backend:** Go 1.26.1, `pgx/v5`
+- **Frontend:** React 19, Vite, Tailwind CSS v4, Radix UI.
+- **Database:** PostgreSQL
 - **Database Tools:**
   - [sqlc](https://sqlc.dev/) - Type-safe Go from SQL.
   - [goose](https://github.com/pressly/goose) - Database migrations.
@@ -30,57 +39,40 @@ A simple Identity Management (IDM) system, organized by features.
 ### Prerequisites
 
 - Go 1.26.1+
+- Node.js (for frontend)
 - PostgreSQL
+- [Task](https://taskfile.dev/)
 - [sqlc](https://sqlc.dev/docs/install)
 - [goose](https://github.com/pressly/goose#install)
 
-### Backend Setup
-
-1.  **Navigate to the API directory:**
-    ```bash
-    cd services/api
-    ```
-2.  **Install dependencies:**
-    ```bash
-    go mod download
-    ```
 ### Development Mode (Recommended)
 
-The project includes a "Dev Mode" that manages your database using Testcontainers and runs the API server directly in your terminal for easy debugging.
+The project includes a "Dev Mode" that manages your database using Testcontainers and runs the API server directly.
 
 1.  **Ensure Docker or Podman Desktop is running.**
-2.  **Run the dev command:**
+2.  **Start development:**
+    ```bash
+    task dev
+    ```
+
+This will manage database lifecycle, generate necessary code, and run the backend server.
+
+### Manual Setup
+
+1.  **Install backend dependencies:**
     ```bash
     cd services/api
-    go run cmd/dev/main.go
+    go mod download
     ```
-
-This will:
-- Start PostgreSQL via Compose (using Testcontainers).
-- Automatically run migrations via `goose`.
-- Start the API server locally on `:8080` with the correct `DATABASE_URL` configured.
-
-### Manual Database Setup (Optional)
-
-For manual control, you can start a PostgreSQL instance using Compose from the root directory:
-```bash
-docker compose up -d
-```
-The database will be available at `localhost:5432` with a persistent volume `./postgres_data`.
-
-### Podman Note
-
-If you are using **Podman Desktop**, the project automatically sets `TESTCONTAINERS_RYUK_DISABLED=true` to ensure compatibility with Podman's default networking. If you encounter issues, ensure your Podman machine is started and the `DOCKER_HOST` environment variable is correctly set (Podman Desktop usually handles this).
-
-4.  **Run migrations:**
+2.  **Install frontend dependencies:**
     ```bash
-    goose -dir db/migrations postgres "postgres://user:pass@localhost:5432/idm" up
+    cd web
+    npm install
     ```
-5.  **Start the server:**
+3.  **Run backend server:**
     ```bash
-    go run cmd/server/main.go
+    go run services/api/cmd/server/main.go
     ```
-
 
 The API will be available at `http://localhost:8080`.
 
