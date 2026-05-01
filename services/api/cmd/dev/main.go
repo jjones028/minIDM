@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"my-idm/internal/app"
+	"minIDM/internal/app"
 
 	"github.com/testcontainers/testcontainers-go/modules/compose"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -32,7 +32,7 @@ func main() {
 
 	stack, err := compose.NewDockerComposeWith(
 		compose.WithStackFiles(composeFile),
-		compose.StackIdentifier("my-idm"),
+		compose.StackIdentifier("minIDM"),
 	)
 	if err != nil {
 		log.Fatalf("failed to initialize compose stack: %v", err)

@@ -1,4 +1,4 @@
-# Project Context: my-idm
+# Project Context: minIDM
 
 ## Technical Stack
 - **Backend**: Go 1.26.1+, `pgx/v5` (PostgreSQL driver), `sqlc` (Type-safe SQL), `goose` (Migrations).
@@ -17,6 +17,7 @@
   - Identity registration with Argon2id hashing.
   - Identity listing.
   - Development mode with automated PostgreSQL lifecycle via Testcontainers.
+  - Feature-based CQRS structure established.
 - **Frontend**: 
   - Themed with `radix-mira` and Amber highlights.
   - Functional registration and listing UI.
@@ -28,7 +29,7 @@
 1. **RBAC Implementation**: 
    - Define SQL schema for `roles`, `resources`, `actions`, and `permissions`.
    - Implement Go middleware for resource-level access control.
-2. **OAuth2/OIDC Provider**: 
+2. **Session Management**: Move from simple API calls to a secure, cookie-based session model suitable for a BFF.
+3. **OAuth2/OIDC Provider**: 
    - Implement authorization server logic as an internal feature.
    - Add `clients` and `tokens` management.
-3. **Session Management**: Move from simple API calls to a secure, cookie-based session model suitable for a BFF.

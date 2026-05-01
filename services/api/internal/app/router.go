@@ -1,8 +1,8 @@
 package app
 
 import (
-	db "my-idm/db/sqlc"
-	"my-idm/internal/identity"
+	db "minIDM/db/sqlc"
+	"minIDM/internal/identity"
 	"net/http"
 )
 

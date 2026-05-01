@@ -3,7 +3,7 @@ package identity
 import (
 	"context"
 	"fmt"
-	db "my-idm/db/sqlc"
+	db "minIDM/db/sqlc"
 
 	"github.com/google/uuid"
 )

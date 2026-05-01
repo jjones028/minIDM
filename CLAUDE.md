@@ -1,4 +1,4 @@
-# Developer Handover: my-idm
+# Developer Handover: minIDM
 
 ## Stack Summary
 - **Languages**: Go (Backend), TypeScript (Frontend).
@@ -16,9 +16,10 @@
 - The UI is fully themed and supports dark mode (Shortcut: `d`).
 - The build pipeline is established; `task build` produces a self-contained deployment artifact.
 - `web/src/index.css` is the source of truth for the project's visual theme.
+- Foundation for CQRS-based feature development in Go is active.
 
 ## Next Steps for the Next AI
-1. **RBAC Schema**: Build out the tables for the Resource-Action model established in the design discussion.
-2. **Middleware**: Create an authorization middleware in `internal/app` that leverages the RBAC tables.
-3. **OAuth2 Service**: Start implementing `internal/oauth2` to turn the IDM into a full OIDC Provider.
-4. **BFF Security**: Implement HttpOnly cookie sessions to replace any placeholder token logic.
+1. **RBAC Schema Implementation**: Define SQL tables and relationships for `roles`, `resources`, `actions`, and `permissions` based on the design pattern.
+2. **Authorization Middleware**: Develop the Go middleware to intercept requests and perform resource-level access control.
+3. **Session Infrastructure**: Replace current token handling with a secure, cookie-based session management system.
+4. **OAuth2/OIDC Provider Integration**: Begin implementing `internal/oauth2` features to support external clients and OIDC flows.

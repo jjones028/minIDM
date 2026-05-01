@@ -2,7 +2,7 @@ package identity
 
 import (
 	"context"
-	db "my-idm/db/sqlc"
+	db "minIDM/db/sqlc"
 )
 
 type ListIdentitiesHandler struct {

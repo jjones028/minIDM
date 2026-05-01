@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"log"
-	"my-idm/internal/app"
+	"minIDM/internal/app"
 	"os"
 )
 

@@ -76,3 +76,16 @@ tasks:
     dir: "{{.WEB_DIR}}"
     cmds:
       - npm run build
+
+  container:build:
+    desc: Build the OCI container image (detects docker or podman)
+    cmds:
+      - |
+        if command -v docker >/dev/null 2>&1; then
+          docker build -t minIDM:latest .
+        elif command -v podman >/dev/null 2>&1; then
+          podman build -t minIDM:latest .
+        else
+          echo "Error: Neither docker nor podman found."
+          exit 1
+        fi

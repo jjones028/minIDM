@@ -1,4 +1,4 @@
-module my-idm
+module minIDM
 
 go 1.26.1
 

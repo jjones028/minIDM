@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
-	db "my-idm/db/sqlc"
+	db "minIDM/db/sqlc"
 	"net/http"
 
 	"github.com/jackc/pgx/v5"

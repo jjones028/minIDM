@@ -2,7 +2,7 @@ package identity
 
 import (
 	"encoding/json"
-	db "my-idm/db/sqlc"
+	db "minIDM/db/sqlc"
 	"net/http"
 )
 

@@ -10,7 +10,7 @@ if (!rootElement) throw new Error('Failed to find the root element');
 
 createRoot(rootElement).render(
   <StrictMode>
-    <ThemeProvider defaultTheme="system" storageKey="my-idm-theme">
+    <ThemeProvider defaultTheme="system" storageKey="minIDM-theme">
       <App />
     </ThemeProvider>
   </StrictMode>,
