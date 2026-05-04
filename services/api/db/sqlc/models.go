@@ -8,6 +8,13 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Action struct {
+	ID          pgtype.UUID        `json:"id"`
+	Name        string             `json:"name"`
+	Description pgtype.Text        `json:"description"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
 type Identity struct {
 	ID        pgtype.UUID        `json:"id"`
 	SubjectID string             `json:"subject_id"`
@@ -16,4 +23,40 @@ type Identity struct {
 	IsEnabled bool               `json:"is_enabled"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type IdentityRole struct {
+	IdentityID pgtype.UUID        `json:"identity_id"`
+	RoleID     pgtype.UUID        `json:"role_id"`
+	AssignedAt pgtype.Timestamptz `json:"assigned_at"`
+}
+
+type Permission struct {
+	ID         pgtype.UUID        `json:"id"`
+	RoleID     pgtype.UUID        `json:"role_id"`
+	ResourceID pgtype.UUID        `json:"resource_id"`
+	ActionID   pgtype.UUID        `json:"action_id"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type Resource struct {
+	ID          pgtype.UUID        `json:"id"`
+	Name        string             `json:"name"`
+	Description pgtype.Text        `json:"description"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type Role struct {
+	ID          pgtype.UUID        `json:"id"`
+	Name        string             `json:"name"`
+	Description pgtype.Text        `json:"description"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Session struct {
+	Token      string             `json:"token"`
+	IdentityID pgtype.UUID        `json:"identity_id"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
