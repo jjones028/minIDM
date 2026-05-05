@@ -9,7 +9,10 @@
 ## Architecture
 - **Pattern**: Backend-for-Frontend (BFF). The API is specifically designed to serve the primary Web UI.
 - **Deployment Model**: Single atomic binary. The React frontend is built and embedded into the Go binary via `//go:embed` in `internal/app/static.go`.
-- **Backend Structure**: Feature-based CQRS. Core logic lives in `internal/<feature_name>/` (e.g. `internal/identity/`, `internal/rbac/`, `internal/session/`).
+- **Backend Structure**: Feature-based CQRS. Core logic lives in `internal/<feature_name>/` (e.g. `internal/identity/`, `internal/rbac/`, `internal/session/`). Each feature follows a strict pattern:
+  - `handler.go`: HTTP routing and JSON Marshalling.
+  - `<command>.go` / `<query>.go`: Isolated logic handlers (e.g., `roles.go`, `logout.go`) that execute against `db.Queries`.
+  - Business rules (e.g., protecting built-in roles) are enforced in Command handlers, not HTTP handlers.
 - **RBAC Model**: Roles → Resources × Actions. The `IdentityHasPermission` SQL query drives all authorization checks.
 - **Dev Proxy**: Vite dev server proxies `/api` → `http://localhost:8080`. This makes browser requests same-origin so `HttpOnly` cookies flow without CORS credential complexity.
 
