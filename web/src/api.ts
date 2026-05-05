@@ -19,31 +19,27 @@ export interface LoginData {
   password: string;
 }
 
-export interface LoginResult {
-  token: string;
-  expires_at: string;
+export interface Role {
+  id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
-const TOKEN_KEY = 'minidm_token';
+const api = axios.create({ baseURL: '/api' });
 
-export const getToken = (): string | null => localStorage.getItem(TOKEN_KEY);
-export const setToken = (token: string) => localStorage.setItem(TOKEN_KEY, token);
-export const clearToken = () => localStorage.removeItem(TOKEN_KEY);
-
-const api = axios.create({
-  baseURL: 'http://localhost:8080/api',
-});
-
-api.interceptors.request.use((config) => {
-  const token = getToken();
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
-
-export const login = (data: LoginData) => api.post<LoginResult>('/login', data);
+export const login = (data: LoginData) => api.post('/login', data);
 export const logout = () => api.delete('/session');
+export const getMe = () => api.get<{ id: string }>('/me');
 export const getIdentities = () => api.get<Identity[]>('/identities');
 export const registerIdentity = (data: RegisterIdentityData) => api.post('/register', data);
+export const getRoles = () => api.get<Role[]>('/roles');
+export const getIdentityRoles = (id: string) => api.get<Role[]>(`/identities/${id}/roles`);
+export const assignRole = (identityId: string, roleId: string) =>
+  api.post(`/identities/${identityId}/roles`, { role_id: roleId });
+export const removeRole = (identityId: string, roleId: string) =>
+  api.delete(`/identities/${identityId}/roles/${roleId}`);
 
 export const isUnauthorized = (err: unknown) =>
   (err as AxiosError)?.response?.status === 401;

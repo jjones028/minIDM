@@ -8,15 +8,15 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func Run(ctx context.Context, dbURL string) error {
-	conn, err := pgx.Connect(ctx, dbURL)
+	conn, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
 		return fmt.Errorf("unable to connect to database: %w", err)
 	}
-	defer conn.Close(ctx)
+	defer conn.Close()
 
 	queries := db.New(conn)
 

@@ -1,23 +1,24 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { registerIdentity, login, setToken, getToken } from '@/api';
+import { Navigate, useNavigate } from 'react-router-dom';
+import { registerIdentity, login } from '@/api';
+import { useAuth } from '@/context/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { AxiosError } from 'axios';
-import { Navigate } from 'react-router-dom';
 
 type Tab = 'signin' | 'signup';
 
 export default function AuthPage() {
   const navigate = useNavigate();
-
-  if (getToken()) return <Navigate to="/" replace />;
+  const { checked, authenticated, setAuthenticated } = useAuth();
 
   const [tab, setTab] = useState<Tab>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+
+  if (checked && authenticated) return <Navigate to="/" replace />;
 
   const switchTab = (next: Tab) => {
     setTab(next);
@@ -33,8 +34,8 @@ export default function AuthPage() {
       if (tab === 'signup') {
         await registerIdentity({ email, password });
       }
-      const { data } = await login({ email, password });
-      setToken(data.token);
+      await login({ email, password });
+      setAuthenticated(true);
       navigate('/');
     } catch (err) {
       const axiosError = err as AxiosError<string>;
