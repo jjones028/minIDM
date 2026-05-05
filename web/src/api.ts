@@ -23,8 +23,29 @@ export interface Role {
   id: string;
   name: string;
   description: string | null;
+  is_builtin: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface Resource {
+  id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+}
+
+export interface Action {
+  id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+}
+
+export interface RolePermission {
+  id: string;
+  resource: string;
+  action: string;
 }
 
 const api = axios.create({ baseURL: '/api' });
@@ -35,6 +56,18 @@ export const getMe = () => api.get<{ id: string }>('/me');
 export const getIdentities = () => api.get<Identity[]>('/identities');
 export const registerIdentity = (data: RegisterIdentityData) => api.post('/register', data);
 export const getRoles = () => api.get<Role[]>('/roles');
+export const createRole = (name: string, description: string) =>
+  api.post<Role>('/roles', { name, description });
+export const updateRole = (id: string, name: string, description: string) =>
+  api.patch<Role>(`/roles/${id}`, { name, description });
+export const deleteRole = (id: string) => api.delete(`/roles/${id}`);
+export const getResources = () => api.get<Resource[]>('/resources');
+export const getActions = () => api.get<Action[]>('/actions');
+export const getRolePermissions = (roleId: string) => api.get<RolePermission[]>(`/roles/${roleId}/permissions`);
+export const addRolePermission = (roleId: string, resourceId: string, actionId: string) =>
+  api.post<RolePermission>(`/roles/${roleId}/permissions`, { resource_id: resourceId, action_id: actionId });
+export const removeRolePermission = (roleId: string, permId: string) =>
+  api.delete(`/roles/${roleId}/permissions/${permId}`);
 export const getIdentityRoles = (id: string) => api.get<Role[]>(`/identities/${id}/roles`);
 export const assignRole = (identityId: string, roleId: string) =>
   api.post(`/identities/${identityId}/roles`, { role_id: roleId });

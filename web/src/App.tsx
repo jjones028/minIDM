@@ -3,6 +3,8 @@ import { useAuth } from '@/context/auth';
 import AuthPage from '@/pages/AuthPage';
 import DashboardPage from '@/pages/DashboardPage';
 import IdentityRolesPage from '@/pages/IdentityRolesPage';
+import RolesPage from '@/pages/RolesPage';
+import RolePermissionsPage from '@/pages/RolePermissionsPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { checked, authenticated } = useAuth();
@@ -28,6 +30,22 @@ export default function App() {
         element={
           <ProtectedRoute>
             <IdentityRolesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/roles"
+        element={
+          <ProtectedRoute>
+            <RolesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/roles/:id/permissions"
+        element={
+          <ProtectedRoute>
+            <RolePermissionsPage />
           </ProtectedRoute>
         }
       />
