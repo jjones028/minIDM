@@ -11,6 +11,32 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addPermissionToRole = `-- name: AddPermissionToRole :one
+INSERT INTO permissions (role_id, resource_id, action_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (role_id, resource_id, action_id) DO UPDATE SET created_at = permissions.created_at
+RETURNING id, role_id, resource_id, action_id, created_at
+`
+
+type AddPermissionToRoleParams struct {
+	RoleID     pgtype.UUID `json:"role_id"`
+	ResourceID pgtype.UUID `json:"resource_id"`
+	ActionID   pgtype.UUID `json:"action_id"`
+}
+
+func (q *Queries) AddPermissionToRole(ctx context.Context, arg AddPermissionToRoleParams) (Permission, error) {
+	row := q.db.QueryRow(ctx, addPermissionToRole, arg.RoleID, arg.ResourceID, arg.ActionID)
+	var i Permission
+	err := row.Scan(
+		&i.ID,
+		&i.RoleID,
+		&i.ResourceID,
+		&i.ActionID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const assignRoleToIdentity = `-- name: AssignRoleToIdentity :exec
 INSERT INTO identity_roles (identity_id, role_id)
 VALUES ($1, $2)
@@ -27,8 +53,60 @@ func (q *Queries) AssignRoleToIdentity(ctx context.Context, arg AssignRoleToIden
 	return err
 }
 
+const createRole = `-- name: CreateRole :one
+INSERT INTO roles (name, description)
+VALUES ($1, $2)
+RETURNING id, name, description, created_at, updated_at, is_builtin
+`
+
+type CreateRoleParams struct {
+	Name        string      `json:"name"`
+	Description pgtype.Text `json:"description"`
+}
+
+func (q *Queries) CreateRole(ctx context.Context, arg CreateRoleParams) (Role, error) {
+	row := q.db.QueryRow(ctx, createRole, arg.Name, arg.Description)
+	var i Role
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.IsBuiltin,
+	)
+	return i, err
+}
+
+const deleteRole = `-- name: DeleteRole :exec
+DELETE FROM roles WHERE id = $1
+`
+
+func (q *Queries) DeleteRole(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteRole, id)
+	return err
+}
+
+const getRoleByID = `-- name: GetRoleByID :one
+SELECT id, name, description, created_at, updated_at, is_builtin FROM roles WHERE id = $1 LIMIT 1
+`
+
+func (q *Queries) GetRoleByID(ctx context.Context, id pgtype.UUID) (Role, error) {
+	row := q.db.QueryRow(ctx, getRoleByID, id)
+	var i Role
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.IsBuiltin,
+	)
+	return i, err
+}
+
 const getRoleByName = `-- name: GetRoleByName :one
-SELECT id, name, description, created_at, updated_at FROM roles WHERE name = $1 LIMIT 1
+SELECT id, name, description, created_at, updated_at, is_builtin FROM roles WHERE name = $1 LIMIT 1
 `
 
 func (q *Queries) GetRoleByName(ctx context.Context, name string) (Role, error) {
@@ -40,6 +118,7 @@ func (q *Queries) GetRoleByName(ctx context.Context, name string) (Role, error) 
 		&i.Description,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IsBuiltin,
 	)
 	return i, err
 }
@@ -68,6 +147,35 @@ func (q *Queries) IdentityHasPermission(ctx context.Context, arg IdentityHasPerm
 	var has_permission bool
 	err := row.Scan(&has_permission)
 	return has_permission, err
+}
+
+const listActions = `-- name: ListActions :many
+SELECT id, name, description, created_at FROM actions ORDER BY name
+`
+
+func (q *Queries) ListActions(ctx context.Context) ([]Action, error) {
+	rows, err := q.db.Query(ctx, listActions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Action
+	for rows.Next() {
+		var i Action
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listPermissionsForIdentity = `-- name: ListPermissionsForIdentity :many
@@ -105,8 +213,72 @@ func (q *Queries) ListPermissionsForIdentity(ctx context.Context, identityID pgt
 	return items, nil
 }
 
+const listPermissionsForRole = `-- name: ListPermissionsForRole :many
+SELECT p.id, res.name AS resource, a.name AS action
+FROM permissions p
+JOIN resources res ON res.id = p.resource_id
+JOIN actions   a   ON a.id   = p.action_id
+WHERE p.role_id = $1
+ORDER BY res.name, a.name
+`
+
+type ListPermissionsForRoleRow struct {
+	ID       pgtype.UUID `json:"id"`
+	Resource string      `json:"resource"`
+	Action   string      `json:"action"`
+}
+
+func (q *Queries) ListPermissionsForRole(ctx context.Context, roleID pgtype.UUID) ([]ListPermissionsForRoleRow, error) {
+	rows, err := q.db.Query(ctx, listPermissionsForRole, roleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPermissionsForRoleRow
+	for rows.Next() {
+		var i ListPermissionsForRoleRow
+		if err := rows.Scan(&i.ID, &i.Resource, &i.Action); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listResources = `-- name: ListResources :many
+SELECT id, name, description, created_at FROM resources ORDER BY name
+`
+
+func (q *Queries) ListResources(ctx context.Context) ([]Resource, error) {
+	rows, err := q.db.Query(ctx, listResources)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Resource
+	for rows.Next() {
+		var i Resource
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRoles = `-- name: ListRoles :many
-SELECT id, name, description, created_at, updated_at FROM roles ORDER BY name
+SELECT id, name, description, created_at, updated_at, is_builtin FROM roles ORDER BY is_builtin DESC, name
 `
 
 func (q *Queries) ListRoles(ctx context.Context) ([]Role, error) {
@@ -124,6 +296,7 @@ func (q *Queries) ListRoles(ctx context.Context) ([]Role, error) {
 			&i.Description,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.IsBuiltin,
 		); err != nil {
 			return nil, err
 		}
@@ -136,7 +309,7 @@ func (q *Queries) ListRoles(ctx context.Context) ([]Role, error) {
 }
 
 const listRolesForIdentity = `-- name: ListRolesForIdentity :many
-SELECT r.id, r.name, r.description, r.created_at, r.updated_at
+SELECT r.id, r.name, r.description, r.created_at, r.updated_at, r.is_builtin
 FROM roles r
 JOIN identity_roles ir ON ir.role_id = r.id
 WHERE ir.identity_id = $1
@@ -158,6 +331,7 @@ func (q *Queries) ListRolesForIdentity(ctx context.Context, identityID pgtype.UU
 			&i.Description,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.IsBuiltin,
 		); err != nil {
 			return nil, err
 		}
@@ -167,6 +341,20 @@ func (q *Queries) ListRolesForIdentity(ctx context.Context, identityID pgtype.UU
 		return nil, err
 	}
 	return items, nil
+}
+
+const removePermissionFromRole = `-- name: RemovePermissionFromRole :exec
+DELETE FROM permissions WHERE id = $1 AND role_id = $2
+`
+
+type RemovePermissionFromRoleParams struct {
+	ID     pgtype.UUID `json:"id"`
+	RoleID pgtype.UUID `json:"role_id"`
+}
+
+func (q *Queries) RemovePermissionFromRole(ctx context.Context, arg RemovePermissionFromRoleParams) error {
+	_, err := q.db.Exec(ctx, removePermissionFromRole, arg.ID, arg.RoleID)
+	return err
 }
 
 const removeRoleFromIdentity = `-- name: RemoveRoleFromIdentity :exec
@@ -182,4 +370,31 @@ type RemoveRoleFromIdentityParams struct {
 func (q *Queries) RemoveRoleFromIdentity(ctx context.Context, arg RemoveRoleFromIdentityParams) error {
 	_, err := q.db.Exec(ctx, removeRoleFromIdentity, arg.IdentityID, arg.RoleID)
 	return err
+}
+
+const updateRole = `-- name: UpdateRole :one
+UPDATE roles
+SET name = $2, description = $3, updated_at = NOW()
+WHERE id = $1
+RETURNING id, name, description, created_at, updated_at, is_builtin
+`
+
+type UpdateRoleParams struct {
+	ID          pgtype.UUID `json:"id"`
+	Name        string      `json:"name"`
+	Description pgtype.Text `json:"description"`
+}
+
+func (q *Queries) UpdateRole(ctx context.Context, arg UpdateRoleParams) (Role, error) {
+	row := q.db.QueryRow(ctx, updateRole, arg.ID, arg.Name, arg.Description)
+	var i Role
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.IsBuiltin,
+	)
+	return i, err
 }

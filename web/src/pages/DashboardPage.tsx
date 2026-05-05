@@ -13,6 +13,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { AxiosError } from 'axios';
+import { AppNav } from '@/components/app-nav';
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -61,7 +62,7 @@ export default function DashboardPage() {
         <header className="flex items-start justify-between">
           <div className="space-y-2">
             <h1 className="text-5xl font-extrabold tracking-tight font-heading">minidm</h1>
-            <p className="text-lg text-muted-foreground">Manage your secure identities with ease and precision.</p>
+            <AppNav />
           </div>
           <Button variant="outline" onClick={handleLogout}>Sign Out</Button>
         </header>

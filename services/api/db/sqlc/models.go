@@ -52,6 +52,7 @@ type Role struct {
 	Description pgtype.Text        `json:"description"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	IsBuiltin   bool               `json:"is_builtin"`
 }
 
 type Session struct {
