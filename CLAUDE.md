@@ -26,6 +26,7 @@
 - **Role management (CRUD)** — `RolesPage` at `/roles`. Create, list, edit, and delete custom roles. Built-in roles are protected from deletion.
 - **Permission management (Matrix)** — `RolePermissionsPage` at `/roles/:id/permissions`. A matrix UI to toggle Resource × Action permissions for a role.
 - **Identity Role Assignment** — `IdentityRolesPage` at `/identities/:id/roles`. Shows assigned roles with remove buttons; dropdown to assign available roles.
+- **CQRS Refactoring** — The `rbac` and `session` packages have been refactored into clean Command/Query handlers (e.g., `roles.go`, `permissions.go`, `logout.go`). Business logic like "built-in role protection" moved from the HTTP layer into Command handlers.
 - **App Navigation** — `AppNav` component provides easy switching between Identities and Roles.
 - **Auth context** — `web/src/context/auth.tsx`. Calls `/api/me` on mount to determine initial auth state. Exposes `setAuthenticated(bool)` so pages update auth state after login/logout/401 without touching localStorage.
 - **Connection pooling** — switched `server.go` from `pgx.Connect` to `pgxpool.New`. Critical fix: concurrent requests (e.g. `Promise.all`) on a single `pgx.Conn` caused sporadic 401s.

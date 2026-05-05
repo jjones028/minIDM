@@ -2,19 +2,44 @@ package rbac
 
 import (
 	"encoding/json"
+	"errors"
 	db "minIDM/db/sqlc"
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-
-type RoleAPI struct {
-	q *db.Queries
+type API struct {
+	listRoles            *ListRolesHandler
+	createRole           *CreateRoleHandler
+	updateRole           *UpdateRoleHandler
+	deleteRole           *DeleteRoleHandler
+	listRolePermissions  *ListRolePermissionsHandler
+	addRolePermission    *AddRolePermissionHandler
+	removeRolePermission *RemoveRolePermissionHandler
+	listResources        *ListResourcesHandler
+	listActions          *ListActionsHandler
+	listIdentityRoles    *ListIdentityRolesHandler
+	assignRole           *AssignRoleHandler
+	removeRole           *RemoveRoleHandler
 }
 
 func RegisterRoleRoutes(mux *http.ServeMux, q *db.Queries, protectRead, protectWrite func(http.Handler) http.Handler) {
-	api := &RoleAPI{q: q}
+	api := &API{
+		listRoles:            NewListRolesHandler(q),
+		createRole:           NewCreateRoleHandler(q),
+		updateRole:           NewUpdateRoleHandler(q),
+		deleteRole:           NewDeleteRoleHandler(q),
+		listRolePermissions:  NewListRolePermissionsHandler(q),
+		addRolePermission:    NewAddRolePermissionHandler(q),
+		removeRolePermission: NewRemoveRolePermissionHandler(q),
+		listResources:        NewListResourcesHandler(q),
+		listActions:          NewListActionsHandler(q),
+		listIdentityRoles:    NewListIdentityRolesHandler(q),
+		assignRole:           NewAssignRoleHandler(q),
+		removeRole:           NewRemoveRoleHandler(q),
+	}
+
 	mux.Handle("GET /api/roles", protectRead(http.HandlerFunc(api.ListRoles)))
 	mux.Handle("POST /api/roles", protectWrite(http.HandlerFunc(api.CreateRole)))
 	mux.Handle("PATCH /api/roles/{id}", protectWrite(http.HandlerFunc(api.UpdateRole)))
@@ -29,8 +54,8 @@ func RegisterRoleRoutes(mux *http.ServeMux, q *db.Queries, protectRead, protectW
 	mux.Handle("DELETE /api/identities/{id}/roles/{roleId}", protectWrite(http.HandlerFunc(api.RemoveRole)))
 }
 
-func (a *RoleAPI) ListRoles(w http.ResponseWriter, r *http.Request) {
-	roles, err := a.q.ListRoles(r.Context())
+func (a *API) ListRoles(w http.ResponseWriter, r *http.Request) {
+	roles, err := a.listRoles.Handle(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -39,13 +64,13 @@ func (a *RoleAPI) ListRoles(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(roles)
 }
 
-func (a *RoleAPI) ListIdentityRoles(w http.ResponseWriter, r *http.Request) {
+func (a *API) ListIdentityRoles(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	roles, err := a.q.ListRolesForIdentity(r.Context(), id)
+	roles, err := a.listIdentityRoles.Handle(r.Context(), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -54,7 +79,7 @@ func (a *RoleAPI) ListIdentityRoles(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(roles)
 }
 
-func (a *RoleAPI) AssignRole(w http.ResponseWriter, r *http.Request) {
+func (a *API) AssignRole(w http.ResponseWriter, r *http.Request) {
 	identityID, err := parseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
@@ -72,7 +97,7 @@ func (a *RoleAPI) AssignRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_role_id", http.StatusBadRequest)
 		return
 	}
-	if err := a.q.AssignRoleToIdentity(r.Context(), db.AssignRoleToIdentityParams{
+	if err := a.assignRole.Handle(r.Context(), AssignRoleCommand{
 		IdentityID: identityID,
 		RoleID:     roleID,
 	}); err != nil {
@@ -82,7 +107,7 @@ func (a *RoleAPI) AssignRole(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (a *RoleAPI) CreateRole(w http.ResponseWriter, r *http.Request) {
+func (a *API) CreateRole(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name        string `json:"name"`
 		Description string `json:"description"`
@@ -95,9 +120,9 @@ func (a *RoleAPI) CreateRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name_required", http.StatusUnprocessableEntity)
 		return
 	}
-	role, err := a.q.CreateRole(r.Context(), db.CreateRoleParams{
+	role, err := a.createRole.Handle(r.Context(), CreateRoleCommand{
 		Name:        req.Name,
-		Description: pgtype.Text{String: req.Description, Valid: req.Description != ""},
+		Description: req.Description,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -108,7 +133,7 @@ func (a *RoleAPI) CreateRole(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(role)
 }
 
-func (a *RoleAPI) UpdateRole(w http.ResponseWriter, r *http.Request) {
+func (a *API) UpdateRole(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
@@ -126,10 +151,10 @@ func (a *RoleAPI) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name_required", http.StatusUnprocessableEntity)
 		return
 	}
-	role, err := a.q.UpdateRole(r.Context(), db.UpdateRoleParams{
+	role, err := a.updateRole.Handle(r.Context(), UpdateRoleCommand{
 		ID:          id,
 		Name:        req.Name,
-		Description: pgtype.Text{String: req.Description, Valid: req.Description != ""},
+		Description: req.Description,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -139,29 +164,28 @@ func (a *RoleAPI) UpdateRole(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(role)
 }
 
-func (a *RoleAPI) DeleteRole(w http.ResponseWriter, r *http.Request) {
+func (a *API) DeleteRole(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	role, err := a.q.GetRoleByID(r.Context(), id)
-	if err != nil {
-		http.Error(w, "not_found", http.StatusNotFound)
-		return
-	}
-	if role.IsBuiltin {
-		http.Error(w, "builtin_role_protected", http.StatusForbidden)
-		return
-	}
-	if err := a.q.DeleteRole(r.Context(), id); err != nil {
+	if err := a.deleteRole.Handle(r.Context(), DeleteRoleCommand{ID: id}); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			http.Error(w, "not_found", http.StatusNotFound)
+			return
+		}
+		if errors.Is(err, ErrBuiltinRoleProtected) {
+			http.Error(w, "builtin_role_protected", http.StatusForbidden)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (a *RoleAPI) RemoveRole(w http.ResponseWriter, r *http.Request) {
+func (a *API) RemoveRole(w http.ResponseWriter, r *http.Request) {
 	identityID, err := parseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
@@ -172,7 +196,7 @@ func (a *RoleAPI) RemoveRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_role_id", http.StatusBadRequest)
 		return
 	}
-	if err := a.q.RemoveRoleFromIdentity(r.Context(), db.RemoveRoleFromIdentityParams{
+	if err := a.removeRole.Handle(r.Context(), RemoveRoleCommand{
 		IdentityID: identityID,
 		RoleID:     roleID,
 	}); err != nil {
@@ -182,8 +206,8 @@ func (a *RoleAPI) RemoveRole(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (a *RoleAPI) ListResources(w http.ResponseWriter, r *http.Request) {
-	resources, err := a.q.ListResources(r.Context())
+func (a *API) ListResources(w http.ResponseWriter, r *http.Request) {
+	resources, err := a.listResources.Handle(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -192,8 +216,8 @@ func (a *RoleAPI) ListResources(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resources)
 }
 
-func (a *RoleAPI) ListActions(w http.ResponseWriter, r *http.Request) {
-	actions, err := a.q.ListActions(r.Context())
+func (a *API) ListActions(w http.ResponseWriter, r *http.Request) {
+	actions, err := a.listActions.Handle(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -202,13 +226,13 @@ func (a *RoleAPI) ListActions(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(actions)
 }
 
-func (a *RoleAPI) ListRolePermissions(w http.ResponseWriter, r *http.Request) {
+func (a *API) ListRolePermissions(w http.ResponseWriter, r *http.Request) {
 	id, err := parseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	perms, err := a.q.ListPermissionsForRole(r.Context(), id)
+	perms, err := a.listRolePermissions.Handle(r.Context(), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -217,20 +241,10 @@ func (a *RoleAPI) ListRolePermissions(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(perms)
 }
 
-func (a *RoleAPI) AddRolePermission(w http.ResponseWriter, r *http.Request) {
+func (a *API) AddRolePermission(w http.ResponseWriter, r *http.Request) {
 	roleID, err := parseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
-		return
-	}
-	// Block mutations on built-in roles
-	role, err := a.q.GetRoleByID(r.Context(), roleID)
-	if err != nil {
-		http.Error(w, "not_found", http.StatusNotFound)
-		return
-	}
-	if role.IsBuiltin {
-		http.Error(w, "builtin_role_protected", http.StatusForbidden)
 		return
 	}
 	var req struct {
@@ -251,12 +265,20 @@ func (a *RoleAPI) AddRolePermission(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_action_id", http.StatusBadRequest)
 		return
 	}
-	perm, err := a.q.AddPermissionToRole(r.Context(), db.AddPermissionToRoleParams{
+	perm, err := a.addRolePermission.Handle(r.Context(), AddRolePermissionCommand{
 		RoleID:     roleID,
 		ResourceID: resourceID,
 		ActionID:   actionID,
 	})
 	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			http.Error(w, "not_found", http.StatusNotFound)
+			return
+		}
+		if errors.Is(err, ErrBuiltinRoleProtected) {
+			http.Error(w, "builtin_role_protected", http.StatusForbidden)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -265,7 +287,7 @@ func (a *RoleAPI) AddRolePermission(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(perm)
 }
 
-func (a *RoleAPI) RemoveRolePermission(w http.ResponseWriter, r *http.Request) {
+func (a *API) RemoveRolePermission(w http.ResponseWriter, r *http.Request) {
 	roleID, err := parseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
@@ -276,20 +298,18 @@ func (a *RoleAPI) RemoveRolePermission(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_perm_id", http.StatusBadRequest)
 		return
 	}
-	// Block mutations on built-in roles
-	role, err := a.q.GetRoleByID(r.Context(), roleID)
-	if err != nil {
-		http.Error(w, "not_found", http.StatusNotFound)
-		return
-	}
-	if role.IsBuiltin {
-		http.Error(w, "builtin_role_protected", http.StatusForbidden)
-		return
-	}
-	if err := a.q.RemovePermissionFromRole(r.Context(), db.RemovePermissionFromRoleParams{
+	if err := a.removeRolePermission.Handle(r.Context(), RemoveRolePermissionCommand{
 		ID:     permID,
 		RoleID: roleID,
 	}); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			http.Error(w, "not_found", http.StatusNotFound)
+			return
+		}
+		if errors.Is(err, ErrBuiltinRoleProtected) {
+			http.Error(w, "builtin_role_protected", http.StatusForbidden)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

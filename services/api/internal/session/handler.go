@@ -11,14 +11,14 @@ const cookieName = "session"
 
 type API struct {
 	login         *LoginHandler
-	q             *db.Queries
+	logout        *LogoutHandler
 	secureCookies bool
 }
 
 func Register(mux *http.ServeMux, queries *db.Queries, secureCookies bool) {
 	api := &API{
 		login:         NewLoginHandler(queries),
-		q:             queries,
+		logout:        NewLogoutHandler(queries),
 		secureCookies: secureCookies,
 	}
 	mux.HandleFunc("POST /api/login", api.Login)
@@ -62,7 +62,7 @@ func (a *API) Login(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) Logout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(cookieName); err == nil {
-		_ = a.q.DeleteSession(r.Context(), cookie.Value)
+		_ = a.logout.Handle(r.Context(), LogoutCommand{Token: cookie.Value})
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     cookieName,
