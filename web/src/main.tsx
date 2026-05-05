@@ -5,6 +5,7 @@ import '@fontsource-variable/geist'
 import './index.css'
 import App from './App'
 import { ThemeProvider } from './components/theme-provider'
+import { AuthProvider } from './context/auth'
 
 const rootElement = document.getElementById('root');
 if (!rootElement) throw new Error('Failed to find the root element');
@@ -13,7 +14,9 @@ createRoot(rootElement).render(
   <StrictMode>
     <BrowserRouter>
       <ThemeProvider defaultTheme="system" storageKey="minIDM-theme">
-        <App />
+        <AuthProvider>
+          <App />
+        </AuthProvider>
       </ThemeProvider>
     </BrowserRouter>
   </StrictMode>,

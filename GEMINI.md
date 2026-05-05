@@ -1,35 +1,54 @@
 # Project Context: minIDM
 
 ## Technical Stack
-- **Backend**: Go 1.26.1+, `pgx/v5` (PostgreSQL driver), `sqlc` (Type-safe SQL), `goose` (Migrations).
-- **Frontend**: React 19, Vite, Tailwind CSS v4, Radix UI.
-- **Design System**: Shadcn/ui (`radix-mira` style) with Amber (`b1tMbvTAQ`) accent palette.
-- **Tooling**: `go-task` (Orchestration), Docker (Testcontainers for Dev DB).
+- **Backend**: Go 1.26.1+, `pgxpool/v5` (PostgreSQL connection pool), `sqlc` (type-safe SQL), `goose` (migrations).
+- **Frontend**: React 19, Vite, Tailwind CSS v4, Radix UI / Shadcn/ui.
+- **Design System**: Shadcn/ui (`radix-mira` style) with OKLCH colors. `web/src/index.css` is the source of truth for theming.
+- **Tooling**: `go-task` (orchestration), Docker/Testcontainers (dev DB lifecycle via `cmd/dev/main.go`).
 
 ## Architecture
 - **Pattern**: Backend-for-Frontend (BFF). The API is specifically designed to serve the primary Web UI.
-- **Deployment Model**: Single Atomic Binary. The React frontend is built and embedded into the Go binary using `embed` for production.
-- **Backend Structure**: Feature-based CQRS. Core logic resides in `internal/feature_name`.
-- **RBAC Model**: Advanced **Roles > Resources > Actions** mapping (Resource-Action intersection).
+- **Deployment Model**: Single atomic binary. The React frontend is built and embedded into the Go binary via `//go:embed` in `internal/app/static.go`.
+- **Backend Structure**: Feature-based CQRS. Core logic lives in `internal/<feature_name>/` (e.g. `internal/identity/`, `internal/rbac/`, `internal/session/`).
+- **RBAC Model**: Roles → Resources × Actions. The `IdentityHasPermission` SQL query drives all authorization checks.
+- **Dev Proxy**: Vite dev server proxies `/api` → `http://localhost:8080`. This makes browser requests same-origin so `HttpOnly` cookies flow without CORS credential complexity.
 
-## Current State
-- **Backend**: 
-  - Identity registration with Argon2id hashing.
-  - Identity listing.
-  - Development mode with automated PostgreSQL lifecycle via Testcontainers.
-  - Feature-based CQRS structure established.
-- **Frontend**: 
-  - Themed with `radix-mira` and Amber highlights.
-  - Functional registration and listing UI.
-  - `ThemeProvider` implemented with system-sync and `d` key toggle for dark mode.
-- **Build**: 
-  - Unified `Taskfile.yml` for dev, build, and code generation.
+## Current State (as of 2026-05-04)
+
+### Backend
+- **Identity**: Registration (Argon2id hashing), listing, bootstrap admin creation. First identity → `admin` role; subsequent → `viewer` role.
+- **RBAC**: Full schema — `roles`, `resources`, `actions`, `permissions`, `identity_roles`. Middleware in `internal/rbac/middleware.go`:
+  - `Authenticate` reads the `session` HTTP cookie and validates it against the `sessions` table.
+  - `Require(resource, action)` checks the identity has the named permission.
+  - `RegisterRoleRoutes` exposes `GET /api/roles`, `GET|POST|DELETE /api/identities/{id}/roles` and `DELETE /api/identities/{id}/roles/{roleId}`.
+- **Sessions**: Cookie-based. Login → `Set-Cookie: session=<token>; HttpOnly; SameSite=Strict`. Logout → clears cookie and deletes DB row. `SECURE_COOKIES=true` env var enables the `Secure` flag (requires HTTPS, set this in production).
+- **`GET /api/me`**: Auth-only endpoint (no permission check). Returns `{ id }` for the current identity. Used by the frontend to check session validity on page load.
+- **Connection pool**: `server.go` uses `pgxpool.New` — required because Go's HTTP server handles requests on separate goroutines and `pgx.Conn` is not goroutine-safe.
+- **Routes assembled in**: `internal/app/router.go`. All protection chains are built there.
+
+### Frontend
+- **Auth context** (`web/src/context/auth.tsx`): Calls `GET /api/me` on mount to establish initial auth state. Exposes `setAuthenticated(bool)` — pages call this after login (true), logout (false), or receiving a 401 (false). No localStorage token management; cookies are transparent.
+- **Routing** (`web/src/App.tsx`): `ProtectedRoute` waits for `checked` (initial `/api/me` complete) before rendering or redirecting.
+- **API client** (`web/src/api.ts`): Axios instance with `baseURL: '/api'`. No interceptors; cookies are sent automatically.
+- **Identity dashboard** (`web/src/pages/DashboardPage.tsx`): Lists identities, creates identities, "Manage Roles" button per row.
+- **Role management page** (`web/src/pages/IdentityRolesPage.tsx`): At `/identities/:id/roles`. Shows assigned roles with remove buttons; `Select` (Shadcn, `position="popper"`) + clear button (×) to assign unassigned roles.
+- **Shadcn components installed**: `button`, `card`, `input`, `table`, `select`.
+
+## Critical Files
+| File | Purpose |
+|------|---------|
+| `services/api/internal/app/router.go` | All route registration and middleware chains |
+| `services/api/internal/rbac/middleware.go` | `Authenticate` + `Require` middleware |
+| `services/api/internal/rbac/handler.go` | Role management API handlers |
+| `services/api/internal/session/handler.go` | Login / logout cookie logic |
+| `services/api/db/migrations/` | `001` identities, `002` RBAC, `003` sessions |
+| `services/api/db/queries/rbac.sql` | Source SQL for sqlc-generated RBAC queries |
+| `web/src/context/auth.tsx` | React auth state (replaces localStorage tokens) |
+| `web/src/api.ts` | All API calls |
+| `web/vite.config.js` | Vite proxy (`/api` → `:8080`) |
 
 ## Next Steps
-1. **RBAC Implementation**: 
-   - Define SQL schema for `roles`, `resources`, `actions`, and `permissions`.
-   - Implement Go middleware for resource-level access control.
-2. **Session Management**: Move from simple API calls to a secure, cookie-based session model suitable for a BFF.
-3. **OAuth2/OIDC Provider**: 
-   - Implement authorization server logic as an internal feature.
-   - Add `clients` and `tokens` management.
+1. **OAuth2/OIDC Provider**: Implement `internal/oauth2` — `clients` table, authorization endpoint, token endpoint, PKCE support.
+2. **Role CRUD**: UI and API to create, edit, and delete roles and manage their permissions (currently roles are seeded-only).
+3. **Identity detail page**: Single-identity view — subject ID, enabled status, roles, active sessions.
+4. **Session management**: Admin view to list and revoke active sessions per identity.

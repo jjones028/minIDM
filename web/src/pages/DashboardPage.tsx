@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  getIdentities, registerIdentity, logout,
-  clearToken, isUnauthorized, type Identity,
+  getIdentities, registerIdentity, logout, isUnauthorized, type Identity,
 } from '@/api';
+import { useAuth } from '@/context/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -16,6 +16,7 @@ import { AxiosError } from 'axios';
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const { setAuthenticated } = useAuth();
   const [identities, setIdentities] = useState<Identity[]>([]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -26,7 +27,7 @@ export default function DashboardPage() {
       .then(({ data }) => { if (!cancelled) setIdentities(data ?? []); })
       .catch(err => {
         if (isUnauthorized(err)) {
-          clearToken();
+          setAuthenticated(false);
           navigate('/login');
         }
       });
@@ -37,7 +38,7 @@ export default function DashboardPage() {
 
   const handleLogout = async () => {
     try { await logout(); } catch { /* best-effort */ }
-    clearToken();
+    setAuthenticated(false);
     navigate('/login');
   };
 
@@ -107,6 +108,7 @@ export default function DashboardPage() {
                 <TableRow>
                   <TableHead className="pl-6">Email</TableHead>
                   <TableHead>Subject ID</TableHead>
+                  <TableHead className="w-32" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -114,6 +116,15 @@ export default function DashboardPage() {
                   <TableRow key={id.id}>
                     <TableCell className="pl-6 font-medium">{id.email}</TableCell>
                     <TableCell className="font-mono text-sm text-muted-foreground">{id.subject_id}</TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => navigate(`/identities/${id.id}/roles`, { state: { email: id.email } })}
+                      >
+                        Manage Roles
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

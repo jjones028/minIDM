@@ -4,10 +4,11 @@ import (
 	"context"
 	db "minIDM/db/sqlc"
 	"net/http"
-	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const sessionCookie = "session"
 
 type contextKey string
 
@@ -18,16 +19,16 @@ func IdentityFromContext(ctx context.Context) (pgtype.UUID, bool) {
 	return id, ok
 }
 
-// Authenticate validates the Bearer token and injects the identity ID into the request context.
+// Authenticate validates the session cookie and injects the identity ID into the request context.
 func Authenticate(queries *db.Queries) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			token := bearerToken(r)
-			if token == "" {
+			cookie, err := r.Cookie(sessionCookie)
+			if err != nil {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
-			session, err := queries.GetSessionByToken(r.Context(), token)
+			session, err := queries.GetSessionByToken(r.Context(), cookie.Value)
 			if err != nil {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
@@ -61,10 +62,3 @@ func Require(resource, action string, queries *db.Queries) func(http.Handler) ht
 	}
 }
 
-func bearerToken(r *http.Request) string {
-	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if !ok {
-		return ""
-	}
-	return token
-}
