@@ -20,7 +20,13 @@
 - **RBAC**: Full schema — `roles`, `resources`, `actions`, `permissions`, `identity_roles`. Middleware in `internal/rbac/middleware.go`:
   - `Authenticate` reads the `session` HTTP cookie and validates it against the `sessions` table.
   - `Require(resource, action)` checks the identity has the named permission.
-  - `RegisterRoleRoutes` exposes `GET /api/roles`, `GET|POST|DELETE /api/identities/{id}/roles` and `DELETE /api/identities/{id}/roles/{roleId}`.
+  - `RegisterRoleRoutes` exposes:
+    - `GET|POST /api/roles`: List and create roles.
+    - `PATCH|DELETE /api/roles/{id}`: Update or delete roles (built-in roles are protected).
+    - `GET|POST|DELETE /api/roles/{id}/permissions`: Manage role permissions (resource x action).
+    - `GET /api/resources`, `GET /api/actions`: Metadata for permission matrix.
+    - `GET|POST /api/identities/{id}/roles`: List and assign roles to identities.
+    - `DELETE /api/identities/{id}/roles/{roleId}`: Remove role from identity.
 - **Sessions**: Cookie-based. Login → `Set-Cookie: session=<token>; HttpOnly; SameSite=Strict`. Logout → clears cookie and deletes DB row. `SECURE_COOKIES=true` env var enables the `Secure` flag (requires HTTPS, set this in production).
 - **`GET /api/me`**: Auth-only endpoint (no permission check). Returns `{ id }` for the current identity. Used by the frontend to check session validity on page load.
 - **Connection pool**: `server.go` uses `pgxpool.New` — required because Go's HTTP server handles requests on separate goroutines and `pgx.Conn` is not goroutine-safe.
@@ -30,8 +36,11 @@
 - **Auth context** (`web/src/context/auth.tsx`): Calls `GET /api/me` on mount to establish initial auth state. Exposes `setAuthenticated(bool)` — pages call this after login (true), logout (false), or receiving a 401 (false). No localStorage token management; cookies are transparent.
 - **Routing** (`web/src/App.tsx`): `ProtectedRoute` waits for `checked` (initial `/api/me` complete) before rendering or redirecting.
 - **API client** (`web/src/api.ts`): Axios instance with `baseURL: '/api'`. No interceptors; cookies are sent automatically.
+- **Navigation** (`web/src/components/app-nav.tsx`): Centralized navigation between Identities and Roles.
 - **Identity dashboard** (`web/src/pages/DashboardPage.tsx`): Lists identities, creates identities, "Manage Roles" button per row.
 - **Role management page** (`web/src/pages/IdentityRolesPage.tsx`): At `/identities/:id/roles`. Shows assigned roles with remove buttons; `Select` (Shadcn, `position="popper"`) + clear button (×) to assign unassigned roles.
+- **Role CRUD page** (`web/src/pages/RolesPage.tsx`): Create, list, edit, and delete roles. Links to permissions management.
+- **Permission Matrix** (`web/src/pages/RolePermissionsPage.tsx`): Toggle-based grid for managing Resource × Action permissions per role.
 - **Shadcn components installed**: `button`, `card`, `input`, `table`, `select`.
 
 ## Critical Files
@@ -39,16 +48,17 @@
 |------|---------|
 | `services/api/internal/app/router.go` | All route registration and middleware chains |
 | `services/api/internal/rbac/middleware.go` | `Authenticate` + `Require` middleware |
-| `services/api/internal/rbac/handler.go` | Role management API handlers |
+| `services/api/internal/rbac/handler.go` | Role and Permission management API handlers |
 | `services/api/internal/session/handler.go` | Login / logout cookie logic |
-| `services/api/db/migrations/` | `001` identities, `002` RBAC, `003` sessions |
+| `services/api/db/migrations/` | `001` identities, `002` RBAC, `003` sessions, `004` builtin roles |
 | `services/api/db/queries/rbac.sql` | Source SQL for sqlc-generated RBAC queries |
 | `web/src/context/auth.tsx` | React auth state (replaces localStorage tokens) |
 | `web/src/api.ts` | All API calls |
+| `web/src/components/app-nav.tsx` | Main application navigation |
 | `web/vite.config.js` | Vite proxy (`/api` → `:8080`) |
 
 ## Next Steps
 1. **OAuth2/OIDC Provider**: Implement `internal/oauth2` — `clients` table, authorization endpoint, token endpoint, PKCE support.
-2. **Role CRUD**: UI and API to create, edit, and delete roles and manage their permissions (currently roles are seeded-only).
-3. **Identity detail page**: Single-identity view — subject ID, enabled status, roles, active sessions.
-4. **Session management**: Admin view to list and revoke active sessions per identity.
+2. **Identity detail page**: Single-identity view — subject ID, enabled status, roles, active sessions.
+3. **Session management**: Admin view to list and revoke active sessions per identity.
+4. **Audit Logging**: Implement a system to track changes to identities, roles, and permissions.
