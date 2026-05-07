@@ -4,6 +4,8 @@
 !.env.example
 .DS_Store
 .task/
+.claude/settings.local.json
+.claude/worktrees/
 
 # Dependencies
 /web/node_modules/
@@ -14,15 +16,30 @@
 /services/api/bin/
 /services/api/tmp/
 
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+go.work.sum
+
 # Logs
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 
 # IDE/Editor
 .idea/
 .vscode/
+*.swp
+*.swo
+*~
 
 # Local database/data
 /postgres_data/
@@ -31,3 +48,7 @@ yarn-error.log*
 
 # OS specific
 Thumbs.db
+
+# Coverage
+coverage/
+*.coverprofile

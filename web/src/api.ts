@@ -74,5 +74,47 @@ export const assignRole = (identityId: string, roleId: string) =>
 export const removeRole = (identityId: string, roleId: string) =>
   api.delete(`/identities/${identityId}/roles/${roleId}`);
 
+// ---- OAuth2 Client Management ----
+
+export interface OAuthClient {
+  id: string;
+  client_id: string;
+  name: string;
+  description: string | null;
+  redirect_uris: string[];
+  scopes: string[];
+  is_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateOAuthClientData {
+  name: string;
+  description?: string;
+  redirect_uris: string[];
+  scopes: string[];
+}
+
+export interface UpdateOAuthClientData {
+  name: string;
+  description?: string;
+  redirect_uris: string[];
+  scopes: string[];
+  is_enabled: boolean;
+}
+
+export interface CreateOAuthClientResult {
+  client: OAuthClient;
+  client_secret: string; // plaintext, shown once
+}
+
+export const listOAuthClients = () => api.get<OAuthClient[]>('/oauth2/clients');
+export const createOAuthClient = (data: CreateOAuthClientData) =>
+  api.post<CreateOAuthClientResult>('/oauth2/clients', data);
+export const getOAuthClient = (id: string) => api.get<OAuthClient>(`/oauth2/clients/${id}`);
+export const updateOAuthClient = (id: string, data: UpdateOAuthClientData) =>
+  api.patch<OAuthClient>(`/oauth2/clients/${id}`, data);
+export const deleteOAuthClient = (id: string) => api.delete(`/oauth2/clients/${id}`);
+
 export const isUnauthorized = (err: unknown) =>
   (err as AxiosError)?.response?.status === 401;

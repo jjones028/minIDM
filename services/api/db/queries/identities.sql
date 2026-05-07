@@ -17,3 +17,6 @@ ORDER BY created_at DESC;
 
 -- name: CountIdentities :one
 SELECT COUNT(*) FROM identities;
+
+-- name: GetIdentityByID :one
+SELECT * FROM identities WHERE id = $1 LIMIT 1;
