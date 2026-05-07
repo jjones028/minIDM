@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { registerIdentity, login } from '@/api';
 import { useAuth } from '@/context/auth';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ type Tab = 'signin' | 'signup';
 
 export default function AuthPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { checked, authenticated, setAuthenticated } = useAuth();
 
   const [tab, setTab] = useState<Tab>('signin');
@@ -36,7 +37,8 @@ export default function AuthPage() {
       }
       await login({ email, password });
       setAuthenticated(true);
-      navigate('/');
+      const next = searchParams.get('next');
+      navigate(next ?? '/');
     } catch (err) {
       const axiosError = err as AxiosError<string>;
       const msg = axiosError.response?.data?.trim();

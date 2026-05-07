@@ -5,6 +5,7 @@ import (
 	"fmt"
 	db "minIDM/db/sqlc"
 	"minIDM/internal/identity"
+	"minIDM/internal/oauth2"
 	"net/http"
 	"os"
 
@@ -30,7 +31,22 @@ func Run(ctx context.Context, dbURL string) error {
 		}
 	}
 
-	handler := NewHandler(queries)
+	// Load or generate the RSA signing key for OAuth2/OIDC.
+	keyPath := os.Getenv("OAUTH2_KEY_PATH")
+	if keyPath == "" {
+		keyPath = "oauth2_signing.key"
+	}
+	signingKey, err := oauth2.LoadOrGenerateRSAKey(keyPath)
+	if err != nil {
+		return fmt.Errorf("oauth2 signing key: %w", err)
+	}
+
+	issuer := os.Getenv("OAUTH2_ISSUER")
+	if issuer == "" {
+		issuer = "http://localhost:8080"
+	}
+
+	handler := NewHandler(queries, signingKey, issuer)
 
 	fmt.Println("API server listening on :8080")
 	server := &http.Server{

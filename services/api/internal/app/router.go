@@ -1,9 +1,11 @@
 package app
 
 import (
+	"crypto/rsa"
 	"encoding/json"
 	db "minIDM/db/sqlc"
 	"minIDM/internal/identity"
+	"minIDM/internal/oauth2"
 	"minIDM/internal/rbac"
 	"minIDM/internal/session"
 	"net/http"
@@ -11,7 +13,7 @@ import (
 )
 
 // NewHandler assembles the application's routes and middleware.
-func NewHandler(queries *db.Queries) http.Handler {
+func NewHandler(queries *db.Queries, signingKey *rsa.PrivateKey, issuer string) http.Handler {
 	mux := http.NewServeMux()
 
 	secureCookies := os.Getenv("SECURE_COOKIES") == "true"
@@ -39,7 +41,12 @@ func NewHandler(queries *db.Queries) http.Handler {
 	protectRoleWrite := chain(rbac.Authenticate(queries), rbac.Require("role", "write", queries))
 	rbac.RegisterRoleRoutes(mux, queries, protectRoleRead, protectRoleWrite)
 
-	// Catch-all for Frontend
+	// OAuth2/OIDC: discovery + protocol endpoints (public) + admin client CRUD (RBAC)
+	protectClientRead := chain(rbac.Authenticate(queries), rbac.Require("oauth2_client", "read", queries))
+	protectClientWrite := chain(rbac.Authenticate(queries), rbac.Require("oauth2_client", "write", queries))
+	oauth2.Register(mux, queries, signingKey, issuer, protectClientRead, protectClientWrite)
+
+	// Catch-all for Frontend (must be last)
 	mux.Handle("/", StaticHandler())
 
 	return corsMiddleware(mux)
@@ -49,7 +56,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)

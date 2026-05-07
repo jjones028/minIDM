@@ -9,59 +9,123 @@
 ## Architecture
 - **Pattern**: Backend-for-Frontend (BFF). The API is specifically designed to serve the primary Web UI.
 - **Deployment Model**: Single atomic binary. The React frontend is built and embedded into the Go binary via `//go:embed` in `internal/app/static.go`.
-- **Backend Structure**: Feature-based CQRS. Core logic lives in `internal/<feature_name>/` (e.g. `internal/identity/`, `internal/rbac/`, `internal/session/`). Each feature follows a strict pattern:
-  - `handler.go`: HTTP routing and JSON Marshalling.
-  - `<command>.go` / `<query>.go`: Isolated logic handlers (e.g., `roles.go`, `logout.go`) that execute against `db.Queries`.
-  - Business rules (e.g., protecting built-in roles) are enforced in Command handlers, not HTTP handlers.
+- **Backend Structure**: Feature-based CQRS. Core logic lives in `internal/<feature_name>/` (e.g. `internal/identity/`, `internal/rbac/`, `internal/session/`, `internal/oauth2/`). Each feature follows a strict pattern:
+  - `handler.go`: HTTP routing and JSON marshalling only.
+  - `<command>.go` / `<query>.go`: Isolated logic handlers that execute against `db.Queries`.
+  - Business rules (e.g., protecting built-in roles, PKCE validation) are enforced in Command handlers, not HTTP handlers.
 - **RBAC Model**: Roles → Resources × Actions. The `IdentityHasPermission` SQL query drives all authorization checks.
 - **Dev Proxy**: Vite dev server proxies `/api` → `http://localhost:8080`. This makes browser requests same-origin so `HttpOnly` cookies flow without CORS credential complexity.
 
-## Current State (as of 2026-05-04)
+## Current State (as of 2026-05-07)
 
 ### Backend
 - **Identity**: Registration (Argon2id hashing), listing, bootstrap admin creation. First identity → `admin` role; subsequent → `viewer` role.
 - **RBAC**: Full schema — `roles`, `resources`, `actions`, `permissions`, `identity_roles`. Middleware in `internal/rbac/middleware.go`:
   - `Authenticate` reads the `session` HTTP cookie and validates it against the `sessions` table.
   - `Require(resource, action)` checks the identity has the named permission.
-  - `RegisterRoleRoutes` exposes:
-    - `GET|POST /api/roles`: List and create roles.
-    - `PATCH|DELETE /api/roles/{id}`: Update or delete roles (built-in roles are protected).
-    - `GET|POST|DELETE /api/roles/{id}/permissions`: Manage role permissions (resource x action).
-    - `GET /api/resources`, `GET /api/actions`: Metadata for permission matrix.
-    - `GET|POST /api/identities/{id}/roles`: List and assign roles to identities.
-    - `DELETE /api/identities/{id}/roles/{roleId}`: Remove role from identity.
-- **Sessions**: Cookie-based. Login → `Set-Cookie: session=<token>; HttpOnly; SameSite=Strict`. Logout → clears cookie and deletes DB row. `SECURE_COOKIES=true` env var enables the `Secure` flag (requires HTTPS, set this in production).
-- **`GET /api/me`**: Auth-only endpoint (no permission check). Returns `{ id }` for the current identity. Used by the frontend to check session validity on page load.
-- **Connection pool**: `server.go` uses `pgxpool.New` — required because Go's HTTP server handles requests on separate goroutines and `pgx.Conn` is not goroutine-safe.
-- **Routes assembled in**: `internal/app/router.go`. All protection chains are built there.
+- **Sessions**: Cookie-based. Login → `Set-Cookie: session=<token>; HttpOnly; SameSite=Strict`. `SECURE_COOKIES=true` env var enables `Secure` flag.
+- **`GET /api/me`**: Auth-only endpoint. Returns `{ id }` for the current identity.
+- **Connection pool**: `server.go` uses `pgxpool.New`.
+- **Routes**: `internal/app/router.go`. `NewHandler(queries, signingKey, issuer)` now takes RSA key and issuer for OAuth2.
+
+### OAuth2/OIDC Provider (completed 2026-05-07)
+Package `internal/oauth2/`. Full authorization code flow with mandatory PKCE (S256), RS256 JWT signing, OIDC discovery, and client management UI.
+
+#### DB Schema (migrations 005–008)
+```
+oauth2_clients
+  id UUID PK, client_id TEXT UNIQUE, client_secret_hash TEXT,
+  name TEXT, description TEXT, redirect_uris TEXT[], scopes TEXT[],
+  is_enabled BOOL, created_at, updated_at
+
+oauth2_authorization_codes
+  code TEXT PK, client_id TEXT→oauth2_clients, identity_id UUID→identities,
+  redirect_uri TEXT, scopes TEXT[], code_challenge TEXT,
+  code_challenge_method TEXT DEFAULT 'S256', expires_at TIMESTAMPTZ,
+  used BOOL DEFAULT FALSE
+
+oauth2_tokens
+  id UUID PK, client_id TEXT, identity_id UUID,
+  jti TEXT UNIQUE, refresh_token_hash TEXT,
+  scopes TEXT[], expires_at TIMESTAMPTZ, revoked BOOL DEFAULT FALSE
+```
+Migration 008 seeds `oauth2_client` resource and grants admin full permissions.
+
+#### Public Endpoints (no RBAC)
+| Endpoint | Notes |
+|----------|-------|
+| `GET /.well-known/openid-configuration` | OIDC discovery document |
+| `GET /oauth2/jwks.json` | RSA-2048 public key as JWKS |
+| `GET /oauth2/authorize` | Checks session cookie itself; redirects unauthenticated to `/login?next=<url>` |
+| `POST /oauth2/token` | Form-encoded; `grant_type=authorization_code` or `refresh_token`; client authenticates via body params |
+| `GET /oauth2/userinfo` | Bearer token (RS256 JWT); validates signature + JTI revocation |
+
+#### Admin API (RBAC: `oauth2_client` resource)
+`GET/POST /api/oauth2/clients` and `GET/PATCH/DELETE /api/oauth2/clients/{id}`. The `client_secret_hash` field is never exposed; plaintext secret is returned only on creation inside `{ client, client_secret }`.
+
+#### Token Design
+- **Access token**: RS256-signed JWT. Claims: `sub` (identity.subject_id), `iss`, `aud` (client_id), `exp`, `iat`, `jti` (random UUID), `scope`, `email` (if requested).
+- **id_token**: same JWT as access token (satisfies OIDC requirements for simple deployments).
+- **Refresh token**: opaque random (32 bytes base64url), stored as SHA-256 hex hash.
+- **Revocation**: `jti` stored in `oauth2_tokens.jti`. Userinfo endpoint does DB lookup to confirm not revoked.
+- **Refresh rotation**: old `oauth2_tokens` row marked `revoked=TRUE`; new row created.
+
+#### New Environment Variables
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `OAUTH2_KEY_PATH` | `oauth2_signing.key` | RSA private key PEM. Auto-generated if file does not exist |
+| `OAUTH2_ISSUER` | `http://localhost:8080` | JWT `iss` claim and discovery base URL |
 
 ### Frontend
-- **Auth context** (`web/src/context/auth.tsx`): Calls `GET /api/me` on mount to establish initial auth state. Exposes `setAuthenticated(bool)` — pages call this after login (true), logout (false), or receiving a 401 (false). No localStorage token management; cookies are transparent.
-- **Routing** (`web/src/App.tsx`): `ProtectedRoute` waits for `checked` (initial `/api/me` complete) before rendering or redirecting.
-- **API client** (`web/src/api.ts`): Axios instance with `baseURL: '/api'`. No interceptors; cookies are sent automatically.
-- **Navigation** (`web/src/components/app-nav.tsx`): Centralized navigation between Identities and Roles.
-- **Identity dashboard** (`web/src/pages/DashboardPage.tsx`): Lists identities, creates identities, "Manage Roles" button per row.
-- **Role management page** (`web/src/pages/IdentityRolesPage.tsx`): At `/identities/:id/roles`. Shows assigned roles with remove buttons; `Select` (Shadcn, `position="popper"`) + clear button (×) to assign unassigned roles.
-- **Role CRUD page** (`web/src/pages/RolesPage.tsx`): Create, list, edit, and delete roles. Links to permissions management.
-- **Permission Matrix** (`web/src/pages/RolePermissionsPage.tsx`): Toggle-based grid for managing Resource × Action permissions per role.
+- **Auth context** (`web/src/context/auth.tsx`): Calls `GET /api/me` on mount to establish initial auth state.
+- **Routing** (`web/src/App.tsx`): `ProtectedRoute` + routes for `/`, `/identities/:id/roles`, `/roles`, `/roles/:id/permissions`, `/oauth2/clients`.
+- **API client** (`web/src/api.ts`): Axios with `baseURL: '/api'`. Includes OAuth2 client CRUD functions.
+- **Navigation** (`web/src/components/app-nav.tsx`): Identities | Roles | OAuth2 Clients.
+- **AuthPage** (`web/src/pages/AuthPage.tsx`): Reads `?next=` query param; redirects there after login (supports OAuth2 authorize flow).
+- **OAuthClientsPage** (`web/src/pages/OAuthClientsPage.tsx`): Create/list/edit/delete clients. Shows `client_id` with copy button. Displays client secret in a modal on creation ("shown once").
 - **Shadcn components installed**: `button`, `card`, `input`, `table`, `select`.
 
 ## Critical Files
 | File | Purpose |
 |------|---------|
 | `services/api/internal/app/router.go` | All route registration and middleware chains |
+| `services/api/internal/app/server.go` | Startup: DB pool, RSA key load, issuer config |
 | `services/api/internal/rbac/middleware.go` | `Authenticate` + `Require` middleware |
-| `services/api/internal/rbac/handler.go` | Role and Permission management API handlers |
+| `services/api/internal/rbac/handler.go` | Role and Permission management API |
 | `services/api/internal/session/handler.go` | Login / logout cookie logic |
-| `services/api/db/migrations/` | `001` identities, `002` RBAC, `003` sessions, `004` builtin roles |
-| `services/api/db/queries/rbac.sql` | Source SQL for sqlc-generated RBAC queries |
-| `web/src/context/auth.tsx` | React auth state (replaces localStorage tokens) |
-| `web/src/api.ts` | All API calls |
+| `services/api/internal/oauth2/` | Full OAuth2/OIDC provider package |
+| `services/api/db/migrations/` | `001`–`008` (identity, rbac, sessions, builtin, oauth2 ×4) |
+| `services/api/db/queries/oauth2.sql` | Sqlc source for OAuth2 queries |
+| `web/src/context/auth.tsx` | React auth state |
+| `web/src/api.ts` | All API calls + TypeScript types |
 | `web/src/components/app-nav.tsx` | Main application navigation |
 | `web/vite.config.js` | Vite proxy (`/api` → `:8080`) |
 
+## CQRS Pattern (follow this for all new features)
+```
+internal/<feature>/
+  handler.go          ← Register(mux, ...) wires routes; HTTP methods parse+encode only
+  <command_name>.go   ← XxxHandler + XxxCommand + Handle(ctx, cmd) → (result, error)
+  <query_name>.go     ← XxxHandler + Handle(ctx, ...) → (result, error)
+```
+Business rules always in command handlers. HTTP handlers never contain SQL or domain logic.
+
+## Sqlc Workflow
+1. Add migration: `db/migrations/<NNN>_<name>.sql` with `-- +goose Up` / `-- +goose Down`
+2. Add queries: `db/queries/<feature>.sql` with `-- name: FnName :one|:many|:exec`
+3. Run: `task gen` (sqlc generate + goose up)
+4. Edit `db/sqlc/` — **never** (auto-generated)
+
+Type mappings (pgx/v5 driver):
+- `UUID` → `pgtype.UUID` | `TEXT NOT NULL` → `string` | `TEXT` nullable → `pgtype.Text`
+- `TEXT[]` → `[]string` | `BOOL NOT NULL` → `bool` | `TIMESTAMPTZ NOT NULL` → `pgtype.Timestamptz`
+
 ## Next Steps
-1. **OAuth2/OIDC Provider**: Implement `internal/oauth2` — `clients` table, authorization endpoint, token endpoint, PKCE support.
-2. **Identity detail page**: Single-identity view — subject ID, enabled status, roles, active sessions.
-3. **Session management**: Admin view to list and revoke active sessions per identity.
-4. **Audit Logging**: Implement a system to track changes to identities, roles, and permissions.
+1. **Identity detail page**: Single-identity view — subject ID, enabled status, assigned roles, active sessions.
+2. **Session listing & revocation**: Admin view to list and revoke active sessions per identity.
+3. **Audit Logging**: Track changes to identities, roles, and permissions.
+4. **OAuth2 consent screen**: Show a React UI during the authorize flow listing requested scopes for user approval (currently auto-approved).
+5. **OAuth2 nonce support**: Add `nonce TEXT` to `oauth2_authorization_codes`; include in `id_token` JWT. Required by some OIDC client libraries.
+6. **Client secret rotation**: `POST /api/oauth2/clients/{id}/rotate-secret`.
+7. **Token introspection** (RFC 7662): `POST /oauth2/introspect`.
+8. **Token revocation** (RFC 7009): `POST /oauth2/revoke`.

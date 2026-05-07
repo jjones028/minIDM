@@ -7,6 +7,8 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const countIdentities = `-- name: CountIdentities :one
@@ -54,6 +56,25 @@ WHERE email = $1 LIMIT 1
 
 func (q *Queries) GetIdentityByEmail(ctx context.Context, email string) (Identity, error) {
 	row := q.db.QueryRow(ctx, getIdentityByEmail, email)
+	var i Identity
+	err := row.Scan(
+		&i.ID,
+		&i.SubjectID,
+		&i.Email,
+		&i.PwHash,
+		&i.IsEnabled,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getIdentityByID = `-- name: GetIdentityByID :one
+SELECT id, subject_id, email, pw_hash, is_enabled, created_at, updated_at FROM identities WHERE id = $1 LIMIT 1
+`
+
+func (q *Queries) GetIdentityByID(ctx context.Context, id pgtype.UUID) (Identity, error) {
+	row := q.db.QueryRow(ctx, getIdentityByID, id)
 	var i Identity
 	err := row.Scan(
 		&i.ID,

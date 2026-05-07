@@ -31,6 +31,44 @@ type IdentityRole struct {
 	AssignedAt pgtype.Timestamptz `json:"assigned_at"`
 }
 
+type Oauth2AuthorizationCode struct {
+	Code                string             `json:"code"`
+	ClientID            string             `json:"client_id"`
+	IdentityID          pgtype.UUID        `json:"identity_id"`
+	RedirectUri         string             `json:"redirect_uri"`
+	Scopes              []string           `json:"scopes"`
+	CodeChallenge       string             `json:"code_challenge"`
+	CodeChallengeMethod string             `json:"code_challenge_method"`
+	ExpiresAt           pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	Used                bool               `json:"used"`
+}
+
+type Oauth2Client struct {
+	ID               pgtype.UUID        `json:"id"`
+	ClientID         string             `json:"client_id"`
+	ClientSecretHash string             `json:"client_secret_hash"`
+	Name             string             `json:"name"`
+	Description      pgtype.Text        `json:"description"`
+	RedirectUris     []string           `json:"redirect_uris"`
+	Scopes           []string           `json:"scopes"`
+	IsEnabled        bool               `json:"is_enabled"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+type Oauth2Token struct {
+	ID               pgtype.UUID        `json:"id"`
+	ClientID         string             `json:"client_id"`
+	IdentityID       pgtype.UUID        `json:"identity_id"`
+	Jti              string             `json:"jti"`
+	RefreshTokenHash pgtype.Text        `json:"refresh_token_hash"`
+	Scopes           []string           `json:"scopes"`
+	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	Revoked          bool               `json:"revoked"`
+}
+
 type Permission struct {
 	ID         pgtype.UUID        `json:"id"`
 	RoleID     pgtype.UUID        `json:"role_id"`
