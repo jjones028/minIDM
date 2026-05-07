@@ -6,6 +6,7 @@
 .task/
 .claude/settings.local.json
 .claude/worktrees/
+*.key
 
 # Dependencies
 /web/node_modules/
