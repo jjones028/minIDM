@@ -6,6 +6,7 @@ import IdentityRolesPage from '@/pages/IdentityRolesPage';
 import RolesPage from '@/pages/RolesPage';
 import RolePermissionsPage from '@/pages/RolePermissionsPage';
 import OAuthClientsPage from '@/pages/OAuthClientsPage';
+import IdentityDetailPage from '@/pages/IdentityDetailPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { checked, authenticated } = useAuth();
@@ -23,6 +24,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <DashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/identities/:id"
+        element={
+          <ProtectedRoute>
+            <IdentityDetailPage />
           </ProtectedRoute>
         }
       />

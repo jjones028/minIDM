@@ -16,10 +16,13 @@
 - **RBAC Model**: Roles → Resources × Actions. The `IdentityHasPermission` SQL query drives all authorization checks.
 - **Dev Proxy**: Vite dev server proxies `/api` → `http://localhost:8080`. This makes browser requests same-origin so `HttpOnly` cookies flow without CORS credential complexity.
 
-## Current State (as of 2026-05-07)
+## Current State (as of 2026-05-08)
 
 ### Backend
-- **Identity**: Registration (Argon2id hashing), listing, bootstrap admin creation. First identity → `admin` role; subsequent → `viewer` role.
+- **Identity**: Registration (Argon2id hashing), listing, detail retrieval, active session listing, bootstrap admin creation. First identity → `admin` role; subsequent → `viewer` role.
+  - `GET /api/identities/{id}` — identity details (omits `pw_hash`)
+  - `GET /api/identities/{id}/sessions` — active sessions `[{created_at, expires_at}]` (token never exposed)
+  - New queries: `GetIdentityByID` (existed), `ListActiveSessionsByIdentityID` (new, filters `expires_at > NOW()`)
 - **RBAC**: Full schema — `roles`, `resources`, `actions`, `permissions`, `identity_roles`. Middleware in `internal/rbac/middleware.go`:
   - `Authenticate` reads the `session` HTTP cookie and validates it against the `sessions` table.
   - `Require(resource, action)` checks the identity has the named permission.
@@ -78,23 +81,26 @@ Migration 008 seeds `oauth2_client` resource and grants admin full permissions.
 
 ### Frontend
 - **Auth context** (`web/src/context/auth.tsx`): Calls `GET /api/me` on mount to establish initial auth state.
-- **Routing** (`web/src/App.tsx`): `ProtectedRoute` + routes for `/`, `/identities/:id/roles`, `/roles`, `/roles/:id/permissions`, `/oauth2/clients`.
-- **API client** (`web/src/api.ts`): Axios with `baseURL: '/api'`. Includes OAuth2 client CRUD functions.
+- **Routing** (`web/src/App.tsx`): `ProtectedRoute` + routes for `/`, `/identities/:id`, `/identities/:id/roles`, `/roles`, `/roles/:id/permissions`, `/oauth2/clients`.
+- **API client** (`web/src/api.ts`): Axios with `baseURL: '/api'`. Includes `getIdentity`, `getIdentitySessions`, and OAuth2 client CRUD functions.
 - **Navigation** (`web/src/components/app-nav.tsx`): Identities | Roles | OAuth2 Clients.
 - **AuthPage** (`web/src/pages/AuthPage.tsx`): Reads `?next=` query param; redirects there after login (supports OAuth2 authorize flow).
+- **IdentityDetailPage** (`web/src/pages/IdentityDetailPage.tsx`): Shows subject ID, enabled/disabled status, assigned roles (with "Manage Roles" link), and active sessions. Reached via "View" button from the dashboard.
 - **OAuthClientsPage** (`web/src/pages/OAuthClientsPage.tsx`): Create/list/edit/delete clients. Shows `client_id` with copy button. Displays client secret in a modal on creation ("shown once").
-- **Shadcn components installed**: `button`, `card`, `input`, `table`, `select`.
+- **Shadcn components installed**: `button`, `card`, `input`, `table`, `select`. Note: no `badge` component — use inline `<span>` with Tailwind classes for status indicators.
 
 ## Critical Files
 | File | Purpose |
 |------|---------|
 | `services/api/internal/app/router.go` | All route registration and middleware chains |
 | `services/api/internal/app/server.go` | Startup: DB pool, RSA key load, issuer config |
+| `services/api/internal/identity/handler.go` | Identity API — list, get, sessions. Has its own `parseUUID` helper |
 | `services/api/internal/rbac/middleware.go` | `Authenticate` + `Require` middleware |
-| `services/api/internal/rbac/handler.go` | Role and Permission management API |
+| `services/api/internal/rbac/handler.go` | Role and Permission management API (also owns identity role routes) |
 | `services/api/internal/session/handler.go` | Login / logout cookie logic |
 | `services/api/internal/oauth2/` | Full OAuth2/OIDC provider package |
 | `services/api/db/migrations/` | `001`–`008` (identity, rbac, sessions, builtin, oauth2 ×4) |
+| `services/api/db/queries/sessions.sql` | Includes `ListActiveSessionsByIdentityID` |
 | `services/api/db/queries/oauth2.sql` | Sqlc source for OAuth2 queries |
 | `web/src/context/auth.tsx` | React auth state |
 | `web/src/api.ts` | All API calls + TypeScript types |
@@ -121,8 +127,7 @@ Type mappings (pgx/v5 driver):
 - `TEXT[]` → `[]string` | `BOOL NOT NULL` → `bool` | `TIMESTAMPTZ NOT NULL` → `pgtype.Timestamptz`
 
 ## Next Steps
-1. **Identity detail page**: Single-identity view — subject ID, enabled status, assigned roles, active sessions.
-2. **Session listing & revocation**: Admin view to list and revoke active sessions per identity.
+1. **Session revocation**: Add a revoke button to the active sessions table on `IdentityDetailPage`. Requires `DELETE /api/identities/{id}/sessions/{handle}` — expose a short opaque handle (e.g. first 8 chars of SHA-256 of token) rather than the token itself.
 3. **Audit Logging**: Track changes to identities, roles, and permissions.
 4. **OAuth2 consent screen**: Show a React UI during the authorize flow listing requested scopes for user approval (currently auto-approved).
 5. **OAuth2 nonce support**: Add `nonce TEXT` to `oauth2_authorization_codes`; include in `id_token` JWT. Required by some OIDC client libraries.

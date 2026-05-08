@@ -13,7 +13,7 @@
 - **Dev Proxy**: In development, Vite proxies `/api` → `http://localhost:8080`, making all requests same-origin so cookies work without CORS changes.
 - **CQRS Pattern**: Each feature has `handler.go` (HTTP wiring + JSON) + per-command/query files. Business rules live in command handlers, never in HTTP handlers.
 
-## Current State (as of 2026-05-07)
+## Current State (as of 2026-05-08)
 
 ### Completed
 - **Identity registration & listing** — full CQRS-based flow with Argon2id password hashing.
@@ -31,6 +31,29 @@
 - **App Navigation** — `AppNav` component provides easy switching between Identities, Roles, and OAuth2 Clients.
 - **Auth context** — `web/src/context/auth.tsx`. Calls `/api/me` on mount to determine initial auth state. Exposes `setAuthenticated(bool)` so pages update auth state after login/logout/401 without touching localStorage.
 - **Connection pooling** — switched `server.go` from `pgx.Connect` to `pgxpool.New`. Critical fix: concurrent requests (e.g. `Promise.all`) on a single `pgx.Conn` caused sporadic 401s.
+
+### Identity Detail Page (completed 2026-05-08)
+Single-identity admin view at `/identities/:id`. Fetches identity details, assigned roles, and active sessions in parallel.
+
+#### New Backend
+| File | Responsibility |
+|------|----------------|
+| `internal/identity/get_identity.go` | `GetIdentityHandler` — wraps `GetIdentityByID` query |
+| `internal/identity/list_identity_sessions.go` | `ListIdentitySessionsHandler` — wraps `ListActiveSessionsByIdentityID` query |
+
+New endpoints (both protected: `identity:read`):
+- `GET /api/identities/{id}` — returns identity sans `pw_hash` (subject ID, email, enabled, timestamps)
+- `GET /api/identities/{id}/sessions` — returns `[{created_at, expires_at}]` for non-expired sessions (token never exposed)
+
+New SQL query in `db/queries/sessions.sql`: `ListActiveSessionsByIdentityID` — filters `expires_at > NOW()` for a given `identity_id`.
+
+#### New Frontend
+| File | Change |
+|------|--------|
+| `web/src/pages/IdentityDetailPage.tsx` | New page — details card, roles card (with "Manage Roles" link), active sessions card |
+| `web/src/api.ts` | Added `IdentitySession` type, `getIdentity`, `getIdentitySessions` |
+| `web/src/App.tsx` | Added `/identities/:id` protected route (more specific than `/identities/:id/roles`) |
+| `web/src/pages/DashboardPage.tsx` | Identity row action changed from "Manage Roles" → "View" linking to detail page |
 
 ### OAuth2/OIDC Provider (completed 2026-05-07)
 Full authorization code flow with PKCE (S256 only), RS256 JWT signing, and OIDC discovery. Package: `internal/oauth2/`.
@@ -102,10 +125,10 @@ Full authorization code flow with PKCE (S256 only), RS256 JWT signing, and OIDC 
 - `web/src/api.ts` — all API functions. No token management; cookies are handled transparently by the browser.
 - `golang-jwt/jwt/v5` is a direct dependency (promoted from indirect during OAuth2 implementation).
 - The CORS middleware in `router.go` adds `Authorization` to `Access-Control-Allow-Headers` (needed for `userinfo` Bearer token calls from browser clients).
+- `GET /api/identities/{id}` and `GET /api/identities/{id}/sessions` are registered in `internal/identity/handler.go` (not `rbac/handler.go`). The identity package now has its own `parseUUID` helper.
 
 ## Next Steps for the Next AI
-1. **Identity detail page**: A single-identity view showing subject ID, enabled status, assigned roles, and active sessions.
-2. **Session listing & revocation**: Allow an admin to view and revoke active sessions for any identity.
+1. **Session listing & revocation**: Allow an admin to revoke individual active sessions from the Identity Detail page. Requires a `DELETE /api/identities/{id}/sessions/{token_hash}` endpoint (or similar). The token itself must not be round-tripped; expose a short opaque handle (e.g. first 8 chars of SHA-256) for identification.
 3. **Audit Logging**: Implement a system to track changes to identities, roles, and permissions.
 4. **OAuth2 consent screen**: Add a React page shown during `/oauth2/authorize` listing requested scopes for user approval. Currently auto-approves. Requires storing pending request state (either in DB or a signed cookie) before displaying the consent UI.
 5. **OAuth2 nonce support**: Add `nonce TEXT` column to `oauth2_authorization_codes`; pass it through to the `id_token` JWT `nonce` claim. Required by OIDC libraries that validate nonce (e.g. PKCE + nonce combined).

@@ -121,9 +121,9 @@ export default function DashboardPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => navigate(`/identities/${id.id}/roles`, { state: { email: id.email } })}
+                        onClick={() => navigate(`/identities/${id.id}`)}
                       >
-                        Manage Roles
+                        View
                       </Button>
                     </TableCell>
                   </TableRow>

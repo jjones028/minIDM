@@ -12,3 +12,8 @@ DELETE FROM sessions WHERE token = $1;
 
 -- name: DeleteExpiredSessions :exec
 DELETE FROM sessions WHERE expires_at < NOW();
+
+-- name: ListActiveSessionsByIdentityID :many
+SELECT * FROM sessions
+WHERE identity_id = $1 AND expires_at > NOW()
+ORDER BY created_at DESC;
