@@ -69,3 +69,34 @@ func (q *Queries) GetSessionByToken(ctx context.Context, token string) (Session,
 	)
 	return i, err
 }
+
+const listActiveSessionsByIdentityID = `-- name: ListActiveSessionsByIdentityID :many
+SELECT token, identity_id, expires_at, created_at FROM sessions
+WHERE identity_id = $1 AND expires_at > NOW()
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListActiveSessionsByIdentityID(ctx context.Context, identityID pgtype.UUID) ([]Session, error) {
+	rows, err := q.db.Query(ctx, listActiveSessionsByIdentityID, identityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Session
+	for rows.Next() {
+		var i Session
+		if err := rows.Scan(
+			&i.Token,
+			&i.IdentityID,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
