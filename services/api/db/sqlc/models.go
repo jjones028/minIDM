@@ -65,6 +65,7 @@ type Oauth2Client struct {
 	IsEnabled        bool               `json:"is_enabled"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	AutoConsent      bool               `json:"auto_consent"`
 }
 
 type Oauth2Token struct {

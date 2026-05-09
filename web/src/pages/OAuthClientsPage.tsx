@@ -37,6 +37,7 @@ export default function OAuthClientsPage() {
   const [editRedirectURIs, setEditRedirectURIs] = useState('');
   const [editScopes, setEditScopes] = useState<string[]>([]);
   const [editEnabled, setEditEnabled] = useState(true);
+  const [editAutoConsent, setEditAutoConsent] = useState(false);
 
   // Secret reveal modal
   const [revealedSecret, setRevealedSecret] = useState<{ clientId: string; secret: string } | null>(null);
@@ -99,6 +100,7 @@ export default function OAuthClientsPage() {
     setEditRedirectURIs(c.redirect_uris.join('\n'));
     setEditScopes(c.scopes);
     setEditEnabled(c.is_enabled);
+    setEditAutoConsent(c.auto_consent);
   };
 
   const handleUpdate = async (id: string) => {
@@ -113,6 +115,7 @@ export default function OAuthClientsPage() {
       redirect_uris: redirectUris,
       scopes: editScopes,
       is_enabled: editEnabled,
+      auto_consent: editAutoConsent,
     };
     try {
       await updateOAuthClient(id, update);
@@ -272,8 +275,9 @@ export default function OAuthClientsPage() {
                   <TableRow key={client.id}>
                     {editingId === client.id ? (
                       <>
-                        <TableCell className="pl-6" colSpan={3}>
+                        <TableCell className="pl-6" colSpan={5}>
                           <div className="space-y-3">
+                          <div className="max-w-lg space-y-3">
                             <div className="grid md:grid-cols-2 gap-2">
                               <Input
                                 value={editName}
@@ -294,33 +298,63 @@ export default function OAuthClientsPage() {
                               onChange={e => setEditRedirectURIs(e.target.value)}
                               placeholder="Redirect URIs, one per line"
                             />
-                            <div className="flex flex-wrap gap-4">
+                            <div className="space-y-1">
+                              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Scopes</p>
                               {ALL_SCOPES.map(scope => (
-                                <label key={scope} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                                <label key={scope} className="flex items-start gap-2.5 cursor-pointer py-1">
                                   <input
                                     type="checkbox"
+                                    className="mt-0.5"
                                     checked={editScopes.includes(scope)}
                                     onChange={e => toggleScope(scope, e.target.checked, editScopes, setEditScopes)}
                                   />
-                                  {scope}
+                                  <span>
+                                    <span className="text-sm font-medium">{scope}</span>
+                                    <span className="block text-xs text-muted-foreground">
+                                      {scope === 'openid'  && 'Allows the client to verify the user\'s identity'}
+                                      {scope === 'profile' && 'Allows the client to read basic profile information'}
+                                      {scope === 'email'   && 'Allows the client to read the user\'s email address'}
+                                    </span>
+                                  </span>
                                 </label>
                               ))}
-                              <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                            </div>
+                            <div className="space-y-1 pt-1 border-t">
+                              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide pt-2">Settings</p>
+                              <label className="flex items-start gap-2.5 cursor-pointer py-1">
                                 <input
                                   type="checkbox"
+                                  className="mt-0.5"
                                   checked={editEnabled}
                                   onChange={e => setEditEnabled(e.target.checked)}
                                 />
-                                Enabled
+                                <span>
+                                  <span className="text-sm font-medium">Enabled</span>
+                                  <span className="block text-xs text-muted-foreground">
+                                    Allow this client to initiate authorization requests
+                                  </span>
+                                </span>
+                              </label>
+                              <label className="flex items-start gap-2.5 cursor-pointer py-1">
+                                <input
+                                  type="checkbox"
+                                  className="mt-0.5"
+                                  checked={editAutoConsent}
+                                  onChange={e => setEditAutoConsent(e.target.checked)}
+                                />
+                                <span>
+                                  <span className="text-sm font-medium">Auto-consent</span>
+                                  <span className="block text-xs text-muted-foreground">
+                                    Skip the consent screen and grant access immediately — only enable for fully trusted first-party clients
+                                  </span>
+                                </span>
                               </label>
                             </div>
                           </div>
-                        </TableCell>
-                        <TableCell />
-                        <TableCell>
-                          <div className="flex gap-1">
-                            <Button size="sm" onClick={() => handleUpdate(client.id)}>Save</Button>
-                            <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>Cancel</Button>
+                            <div className="flex gap-2 pt-2 justify-end">
+                              <Button size="sm" onClick={() => handleUpdate(client.id)}>Save</Button>
+                              <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>Cancel</Button>
+                            </div>
                           </div>
                         </TableCell>
                       </>
@@ -339,13 +373,20 @@ export default function OAuthClientsPage() {
                           {client.scopes.join(', ')}
                         </TableCell>
                         <TableCell>
-                          <span className={`text-xs px-1.5 py-0.5 rounded-sm font-medium ${
-                            client.is_enabled
-                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                              : 'bg-muted text-muted-foreground'
-                          }`}>
-                            {client.is_enabled ? 'enabled' : 'disabled'}
-                          </span>
+                          <div className="flex flex-col gap-1">
+                            <span className={`text-xs px-1.5 py-0.5 rounded-sm font-medium w-fit ${
+                              client.is_enabled
+                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                : 'bg-muted text-muted-foreground'
+                            }`}>
+                              {client.is_enabled ? 'enabled' : 'disabled'}
+                            </span>
+                            {client.auto_consent && (
+                              <span className="text-xs px-1.5 py-0.5 rounded-sm font-medium w-fit bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                auto-consent
+                              </span>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-1">

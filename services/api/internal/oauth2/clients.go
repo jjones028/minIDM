@@ -16,6 +16,7 @@ type CreateClientCommand struct {
 	Description  string
 	RedirectURIs []string
 	Scopes       []string
+	AutoConsent  bool
 }
 
 type CreateClientResult struct {
@@ -55,6 +56,7 @@ func (h *CreateClientHandler) Handle(ctx context.Context, cmd CreateClientComman
 		Description:      pgtype.Text{String: cmd.Description, Valid: cmd.Description != ""},
 		RedirectUris:     cmd.RedirectURIs,
 		Scopes:           scopes,
+		AutoConsent:      cmd.AutoConsent,
 	})
 	if err != nil {
 		return nil, err
@@ -95,6 +97,7 @@ type UpdateClientCommand struct {
 	RedirectURIs []string
 	Scopes       []string
 	IsEnabled    bool
+	AutoConsent  bool
 }
 
 type UpdateClientHandler struct{ q *db.Queries }
@@ -111,6 +114,7 @@ func (h *UpdateClientHandler) Handle(ctx context.Context, cmd UpdateClientComman
 		RedirectUris: cmd.RedirectURIs,
 		Scopes:       cmd.Scopes,
 		IsEnabled:    cmd.IsEnabled,
+		AutoConsent:  cmd.AutoConsent,
 	})
 }
 

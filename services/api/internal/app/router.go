@@ -47,7 +47,7 @@ func NewHandler(queries *db.Queries, signingKey *rsa.PrivateKey, issuer string) 
 	// OAuth2/OIDC: discovery + protocol endpoints (public) + admin client CRUD (RBAC)
 	protectClientRead := chain(rbac.Authenticate(queries), rbac.Require("oauth2_client", "read", queries))
 	protectClientWrite := chain(rbac.Authenticate(queries), rbac.Require("oauth2_client", "write", queries))
-	oauth2.Register(mux, queries, signingKey, issuer, protectClientRead, protectClientWrite, auditor)
+	oauth2.Register(mux, queries, signingKey, issuer, protectClientRead, protectClientWrite, auditor, rbac.Authenticate(queries))
 
 	// Catch-all for Frontend (must be last)
 	mux.Handle("/", StaticHandler())

@@ -105,6 +105,23 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// --- Consent check ---
+	// If the client does not have auto-consent enabled, redirect to the React
+	// consent page. All validated params are passed as query params so the
+	// consent page can display them and POST them back to /api/oauth2/consent.
+	if !client.AutoConsent {
+		consentURL := "/oauth2/consent?" + url.Values{
+			"client_id":             {clientID},
+			"redirect_uri":          {redirectURI},
+			"scope":                 {strings.Join(scopes, " ")},
+			"state":                 {state},
+			"code_challenge":        {codeChallenge},
+			"code_challenge_method": {codeChallengeMethod},
+		}.Encode()
+		http.Redirect(w, r, consentURL, http.StatusFound)
+		return
+	}
+
 	// --- Issue authorization code ---
 
 	code, err := GenerateAuthCode()

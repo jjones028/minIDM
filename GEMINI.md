@@ -101,7 +101,7 @@ Migration 008 seeds `oauth2_client` resource and grants admin full permissions.
 | `services/api/internal/rbac/handler.go` | Role and Permission management API (also owns identity role routes) |
 | `services/api/internal/session/handler.go` | Login / logout cookie logic |
 | `services/api/internal/oauth2/` | Full OAuth2/OIDC provider package |
-| `services/api/db/migrations/` | `001`–`008` (identity, rbac, sessions, builtin, oauth2 ×4) |
+| `services/api/db/migrations/` | `001`–`011` (identity, rbac, sessions, builtin, oauth2 ×4, audit ×2, auto_consent) |
 | `services/api/db/queries/sessions.sql` | Includes `ListActiveSessionsByIdentityID` |
 | `services/api/db/queries/oauth2.sql` | Sqlc source for OAuth2 queries |
 | `web/src/context/auth.tsx` | React auth state |
@@ -162,9 +162,38 @@ Migration 010 seeds `audit_log` resource and grants admin `read` permission.
 - `web/src/App.tsx` — `/audit-logs` protected route
 - `web/src/components/app-nav.tsx` — "Audit Log" nav link
 
+### OAuth2 Consent Screen + Auto-Consent (completed 2026-05-08)
+
+#### DB (migration 011)
+`ALTER TABLE oauth2_clients ADD COLUMN auto_consent BOOLEAN NOT NULL DEFAULT FALSE`
+
+#### New Endpoints
+| Method | Path | Auth | Notes |
+|--------|------|------|-------|
+| `GET` | `/api/oauth2/client-info?client_id=X` | Public | `{name, description, scopes, auto_consent}` for consent page |
+| `POST` | `/api/oauth2/consent` | Session cookie | Re-validates params, issues auth code, returns `{redirect_url}` |
+
+#### Flow
+`GET /oauth2/authorize` → after full validation, if `auto_consent=false` → redirect to `/oauth2/consent?{params}`. React page shows client name + requested scopes. Approve → `POST /api/oauth2/consent` → server re-validates + issues code → `{redirect_url}` → `window.location.href`. Deny → redirect to `redirect_uri?error=access_denied`.
+
+#### New Files
+- `internal/oauth2/consent.go` — `ConsentHandler`: re-validates all params + session, issues code
+- `internal/oauth2/client_info.go` — `ClientInfoHandler`: public display info for consent page
+
+#### `oauth2.Register` signature
+Now accepts `authenticate func(http.Handler) http.Handler` as final param (gates `POST /api/oauth2/consent`).
+
+#### Frontend
+- `web/src/pages/ConsentPage.tsx` — consent UI at `/oauth2/consent`; Approve/Deny; no ProtectedRoute (handles 401 itself)
+- `web/src/pages/OAuthClientsPage.tsx` — edit form: vertical scope checkboxes with descriptions; Auto-consent toggle under Settings section with warning copy; blue `auto-consent` badge in display row
+- `web/src/api.ts` — `auto_consent` on `OAuthClient`/`UpdateOAuthClientData`; `ClientInfo`, `ConsentParams`, `getClientInfo`, `approveConsent`
+
+#### Design Notes
+- No pending-consent DB table: params are re-validated on POST (safe — PKCE binds the code to the verifier holder).
+- `auto_consent` defaults to `false` for all clients.
+
 ## Next Steps
-1. **OAuth2 consent screen**: Show a React UI during the authorize flow listing requested scopes for user approval (currently auto-approved).
-3. **OAuth2 nonce support**: Add `nonce TEXT` to `oauth2_authorization_codes`; include in `id_token` JWT. Required by some OIDC client libraries.
-4. **Client secret rotation**: `POST /api/oauth2/clients/{id}/rotate-secret`.
-5. **Token introspection** (RFC 7662): `POST /oauth2/introspect`.
-6. **Token revocation** (RFC 7009): `POST /oauth2/revoke`.
+1. **OAuth2 nonce support**: Add `nonce TEXT` to `oauth2_authorization_codes`; include in `id_token` JWT. Required by some OIDC client libraries.
+2. **Client secret rotation**: `POST /api/oauth2/clients/{id}/rotate-secret`.
+3. **Token introspection** (RFC 7662): `POST /oauth2/introspect`.
+4. **Token revocation** (RFC 7009): `POST /oauth2/revoke`.

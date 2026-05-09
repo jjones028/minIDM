@@ -23,6 +23,7 @@ type clientResponse struct {
 	RedirectURIs []string           `json:"redirect_uris"`
 	Scopes       []string           `json:"scopes"`
 	IsEnabled    bool               `json:"is_enabled"`
+	AutoConsent  bool               `json:"auto_consent"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
@@ -36,6 +37,7 @@ func toClientResponse(c db.Oauth2Client) clientResponse {
 		RedirectURIs: c.RedirectUris,
 		Scopes:       c.Scopes,
 		IsEnabled:    c.IsEnabled,
+		AutoConsent:  c.AutoConsent,
 		CreatedAt:    c.CreatedAt,
 		UpdatedAt:    c.UpdatedAt,
 	}
@@ -49,6 +51,8 @@ type API struct {
 	updateClient *UpdateClientHandler
 	deleteClient *DeleteClientHandler
 	authorize    *AuthorizeHandler
+	consent      *ConsentHandler
+	clientInfo   *ClientInfoHandler
 	token        *TokenHandler
 	userinfo     *UserinfoHandler
 	discovery    *DiscoveryHandler
@@ -70,6 +74,7 @@ func Register(
 	protectClientRead func(http.Handler) http.Handler,
 	protectClientWrite func(http.Handler) http.Handler,
 	auditor *audit.Auditor,
+	authenticate func(http.Handler) http.Handler,
 ) {
 	api := &API{
 		createClient: NewCreateClientHandler(q),
@@ -78,6 +83,8 @@ func Register(
 		updateClient: NewUpdateClientHandler(q),
 		deleteClient: NewDeleteClientHandler(q),
 		authorize:    NewAuthorizeHandler(q, key),
+		consent:      NewConsentHandler(q, key),
+		clientInfo:   NewClientInfoHandler(q),
 		token:        NewTokenHandler(q, key, issuer),
 		userinfo:     NewUserinfoHandler(q, key, issuer),
 		discovery:    NewDiscoveryHandler(issuer),
@@ -93,6 +100,10 @@ func Register(
 	mux.Handle("GET /oauth2/authorize", api.authorize)
 	mux.Handle("POST /oauth2/token", http.HandlerFunc(api.token.ServeHTTP))
 	mux.Handle("GET /oauth2/userinfo", api.userinfo)
+
+	// Consent: public client info (for consent page display) + session-gated approval
+	mux.Handle("GET /api/oauth2/client-info", api.clientInfo)
+	mux.Handle("POST /api/oauth2/consent", authenticate(api.consent))
 
 	// Admin API — protected by RBAC
 	mux.Handle("GET /api/oauth2/clients", protectClientRead(http.HandlerFunc(api.ListClients)))
@@ -124,6 +135,7 @@ func (a *API) CreateClient(w http.ResponseWriter, r *http.Request) {
 		Description  string   `json:"description"`
 		RedirectURIs []string `json:"redirect_uris"`
 		Scopes       []string `json:"scopes"`
+		AutoConsent  bool     `json:"auto_consent"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid_request", http.StatusBadRequest)
@@ -143,6 +155,7 @@ func (a *API) CreateClient(w http.ResponseWriter, r *http.Request) {
 		Description:  req.Description,
 		RedirectURIs: req.RedirectURIs,
 		Scopes:       req.Scopes,
+		AutoConsent:  req.AutoConsent,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -193,6 +206,7 @@ func (a *API) UpdateClient(w http.ResponseWriter, r *http.Request) {
 		RedirectURIs []string `json:"redirect_uris"`
 		Scopes       []string `json:"scopes"`
 		IsEnabled    bool     `json:"is_enabled"`
+		AutoConsent  bool     `json:"auto_consent"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid_request", http.StatusBadRequest)
@@ -210,6 +224,7 @@ func (a *API) UpdateClient(w http.ResponseWriter, r *http.Request) {
 		RedirectURIs: req.RedirectURIs,
 		Scopes:       req.Scopes,
 		IsEnabled:    req.IsEnabled,
+		AutoConsent:  req.AutoConsent,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

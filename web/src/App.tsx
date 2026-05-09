@@ -8,6 +8,7 @@ import RolePermissionsPage from '@/pages/RolePermissionsPage';
 import OAuthClientsPage from '@/pages/OAuthClientsPage';
 import IdentityDetailPage from '@/pages/IdentityDetailPage';
 import AuditLogsPage from '@/pages/AuditLogsPage';
+import ConsentPage from '@/pages/ConsentPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { checked, authenticated } = useAuth();
@@ -76,6 +77,7 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+      <Route path="/oauth2/consent" element={<ConsentPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

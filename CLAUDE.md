@@ -193,12 +193,50 @@ Tracks administrative actions across identities, roles, permissions, sessions, a
 - `internal/oauth2/handler.go` now imports `minIDM/internal/rbac` and `minIDM/internal/audit`.
 - `session/logout.go` now calls `GetSessionByToken` before `DeleteSession` to capture the identity ID.
 
+### OAuth2 Consent Screen + Auto-Consent (completed 2026-05-08)
+Adds an explicit consent step to the authorization code flow. Admins can enable per-client auto-consent to skip the screen for trusted first-party apps.
+
+#### DB Migration
+| Migration | Purpose |
+|-----------|---------|
+| `011_add_auto_consent.sql` | `ALTER TABLE oauth2_clients ADD COLUMN auto_consent BOOLEAN NOT NULL DEFAULT FALSE` |
+
+#### New Endpoints
+| Method | Path | Auth | Notes |
+|--------|------|------|-------|
+| `GET` | `/api/oauth2/client-info?client_id=X` | Public | Returns `{name, description, scopes, auto_consent}` for the consent page display |
+| `POST` | `/api/oauth2/consent` | Session cookie | Re-validates all authorize params, issues auth code, returns `{redirect_url}` |
+
+#### Updated Authorize Flow (`internal/oauth2/authorize.go`)
+After full validation (client, redirect_uri, PKCE, scopes, session), if `client.AutoConsent = false` the handler redirects to `/oauth2/consent?{all validated params}` instead of issuing the code immediately. Auto-consent clients proceed as before.
+
+#### New Files
+| File | Responsibility |
+|------|----------------|
+| `internal/oauth2/consent.go` | `ConsentHandler` — re-validates all params + session, issues auth code, returns JSON `{redirect_url}` |
+| `internal/oauth2/client_info.go` | `ClientInfoHandler` — public endpoint returning non-sensitive client display info |
+
+#### `oauth2.Register` signature change
+Now accepts an additional `authenticate func(http.Handler) http.Handler` param (used to gate `POST /api/oauth2/consent`).
+
+#### Frontend
+| File | Change |
+|------|--------|
+| `web/src/pages/ConsentPage.tsx` | New page at `/oauth2/consent` — fetches client info, lists requested scopes with human-readable labels, Approve (→ POST consent) / Deny (→ redirect with `access_denied`) |
+| `web/src/pages/OAuthClientsPage.tsx` | Edit form gains vertical "Scopes" + "Settings" checkbox sections with descriptions; Auto-consent toggle; display row shows blue `auto-consent` badge |
+| `web/src/api.ts` | Added `auto_consent` to `OAuthClient`, `UpdateOAuthClientData`; added `ClientInfo`, `ConsentParams` types; `getClientInfo`, `approveConsent` functions |
+| `web/src/App.tsx` | Added `/oauth2/consent` route (no ProtectedRoute wrapper — page handles auth itself) |
+
+#### Key Design Decisions
+- **No pending-consent DB table**: validated params are passed as query params to the React consent page and re-validated on `POST /api/oauth2/consent`. Safe because PKCE ensures the code is only useful to whoever holds the code_verifier.
+- **Auto-consent default is `false`**: all existing and new clients require explicit consent unless an admin enables the flag.
+- **Consent POST is session-gated**: `rbac.Authenticate` middleware is applied; unauthenticated POSTs get 401.
+
 ## Next Steps for the Next AI
-1. **OAuth2 consent screen**: Add a React page shown during `/oauth2/authorize` listing requested scopes for user approval. Currently auto-approves. Requires storing pending request state (either in DB or a signed cookie) before displaying the consent UI.
-3. **OAuth2 nonce support**: Add `nonce TEXT` column to `oauth2_authorization_codes`; pass it through to the `id_token` JWT `nonce` claim. Required by OIDC libraries that validate nonce (e.g. PKCE + nonce combined).
-4. **Client secret rotation**: `POST /api/oauth2/clients/{id}/rotate-secret` — re-generate, re-hash, return once. Does not affect active tokens (those use JWTs verified by the key, not the secret).
-5. **Token introspection** (RFC 7662): `POST /oauth2/introspect` — lets resource servers validate an access token without parsing JWTs themselves. Useful for non-JWT-aware services.
-6. **Token revocation** (RFC 7009): `POST /oauth2/revoke` — lets clients explicitly invalidate a refresh or access token.
+1. **OAuth2 nonce support**: Add `nonce TEXT` column to `oauth2_authorization_codes`; pass it through to the `id_token` JWT `nonce` claim. Required by OIDC libraries that validate nonce (e.g. PKCE + nonce combined).
+2. **Client secret rotation**: `POST /api/oauth2/clients/{id}/rotate-secret` — re-generate, re-hash, return once. Does not affect active tokens (those use JWTs verified by the key, not the secret).
+3. **Token introspection** (RFC 7662): `POST /oauth2/introspect` — lets resource servers validate an access token without parsing JWTs themselves. Useful for non-JWT-aware services.
+4. **Token revocation** (RFC 7009): `POST /oauth2/revoke` — lets clients explicitly invalidate a refresh or access token.
 
 ## CQRS Pattern (for new features)
 Every new feature should follow this shape:
