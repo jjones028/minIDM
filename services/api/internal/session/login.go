@@ -24,8 +24,9 @@ type LoginCommand struct {
 }
 
 type LoginResult struct {
-	Token     string
-	ExpiresAt time.Time
+	Token      string
+	IdentityID pgtype.UUID
+	ExpiresAt  time.Time
 }
 
 type LoginHandler struct {
@@ -62,7 +63,7 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (*LoginResu
 		return nil, fmt.Errorf("creating session: %w", err)
 	}
 
-	return &LoginResult{Token: token, ExpiresAt: expiresAt}, nil
+	return &LoginResult{Token: token, IdentityID: ident.ID, ExpiresAt: expiresAt}, nil
 }
 
 func generateToken() (string, error) {

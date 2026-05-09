@@ -7,6 +7,8 @@ import (
 	"net/http"
 
 	db "minIDM/db/sqlc"
+	"minIDM/internal/audit"
+	"minIDM/internal/rbac"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -51,6 +53,7 @@ type API struct {
 	userinfo     *UserinfoHandler
 	discovery    *DiscoveryHandler
 	jwks         *JWKSHandler
+	auditor      *audit.Auditor
 }
 
 // Register wires up all OAuth2 routes into mux.
@@ -66,6 +69,7 @@ func Register(
 	issuer string,
 	protectClientRead func(http.Handler) http.Handler,
 	protectClientWrite func(http.Handler) http.Handler,
+	auditor *audit.Auditor,
 ) {
 	api := &API{
 		createClient: NewCreateClientHandler(q),
@@ -78,6 +82,7 @@ func Register(
 		userinfo:     NewUserinfoHandler(q, key, issuer),
 		discovery:    NewDiscoveryHandler(issuer),
 		jwks:         NewJWKSHandler(key),
+		auditor:      auditor,
 	}
 
 	// OIDC discovery + JWKS (fully public)
@@ -144,6 +149,11 @@ func (a *API) CreateClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	actorID, _ := rbac.IdentityFromContext(r.Context())
+	a.auditor.Log(r.Context(), actorID, "oauth2_client.create", "oauth2_client", audit.UUIDStr(result.Client.ID), map[string]any{
+		"name":      result.Client.Name,
+		"client_id": result.Client.ClientID,
+	})
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]any{
@@ -205,6 +215,10 @@ func (a *API) UpdateClient(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	actorID, _ := rbac.IdentityFromContext(r.Context())
+	a.auditor.Log(r.Context(), actorID, "oauth2_client.update", "oauth2_client", audit.UUIDStr(id), map[string]any{
+		"name": req.Name,
+	})
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(toClientResponse(client))
 }
@@ -219,6 +233,8 @@ func (a *API) DeleteClient(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	actorID, _ := rbac.IdentityFromContext(r.Context())
+	a.auditor.Log(r.Context(), actorID, "oauth2_client.delete", "oauth2_client", audit.UUIDStr(id), nil)
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -43,7 +43,7 @@ Single-identity admin view at `/identities/:id`. Fetches identity details, assig
 
 New endpoints (both protected: `identity:read`):
 - `GET /api/identities/{id}` — returns identity sans `pw_hash` (subject ID, email, enabled, timestamps)
-- `GET /api/identities/{id}/sessions` — returns `[{created_at, expires_at}]` for non-expired sessions (token never exposed)
+- `GET /api/identities/{id}/sessions` — returns `[{handle, created_at, expires_at}]` for non-expired sessions (token never exposed; handle = first 8 hex chars of SHA-256)
 
 New SQL query in `db/queries/sessions.sql`: `ListActiveSessionsByIdentityID` — filters `expires_at > NOW()` for a given `identity_id`.
 
@@ -54,6 +54,25 @@ New SQL query in `db/queries/sessions.sql`: `ListActiveSessionsByIdentityID` —
 | `web/src/api.ts` | Added `IdentitySession` type, `getIdentity`, `getIdentitySessions` |
 | `web/src/App.tsx` | Added `/identities/:id` protected route (more specific than `/identities/:id/roles`) |
 | `web/src/pages/DashboardPage.tsx` | Identity row action changed from "Manage Roles" → "View" linking to detail page |
+
+### Session Revocation (completed 2026-05-08)
+Admins can revoke individual active sessions from the Identity Detail page.
+
+#### New Backend
+| File | Responsibility |
+|------|----------------|
+| `internal/identity/revoke_identity_session.go` | `RevokeIdentitySessionHandler` — lists sessions for the identity, matches by handle, calls `DeleteSession` |
+
+New endpoint (protected: `identity:write`):
+- `DELETE /api/identities/{id}/sessions/{handle}` — revokes the session matching the opaque handle. Handle = first 8 hex chars of `SHA-256(token)`. Token is never round-tripped.
+
+#### `sessionHandle` helper
+`internal/identity/revoke_identity_session.go` exports `sessionHandle(token string) string` (unexported, shared with `list_identity_sessions.go` via same package). The handle is safe to expose — it cannot be used to reconstruct the token.
+
+#### Frontend
+Revoke button added to the active sessions table on `IdentityDetailPage`. Calls `DELETE /api/identities/:id/sessions/:handle`. Row is removed from the UI on success.
+
+New API function: `revokeIdentitySession(identityId, handle)` in `web/src/api.ts`.
 
 ### OAuth2/OIDC Provider (completed 2026-05-07)
 Full authorization code flow with PKCE (S256 only), RS256 JWT signing, and OIDC discovery. Package: `internal/oauth2/`.
@@ -127,14 +146,59 @@ Full authorization code flow with PKCE (S256 only), RS256 JWT signing, and OIDC 
 - The CORS middleware in `router.go` adds `Authorization` to `Access-Control-Allow-Headers` (needed for `userinfo` Bearer token calls from browser clients).
 - `GET /api/identities/{id}` and `GET /api/identities/{id}/sessions` are registered in `internal/identity/handler.go` (not `rbac/handler.go`). The identity package now has its own `parseUUID` helper.
 
+### Audit Logging (completed 2026-05-08)
+Tracks administrative actions across identities, roles, permissions, sessions, and OAuth2 clients. Viewable at `/audit-logs` (admin only).
+
+#### DB Migrations Added
+| Migration | Purpose |
+|-----------|---------|
+| `009_create_audit_logs.sql` | `audit_logs` table — `id`, `actor_id UUID` (nullable FK → identities), `action TEXT`, `resource_type TEXT`, `resource_id TEXT` (nullable), `details JSONB` (nullable), `created_at TIMESTAMPTZ` |
+| `010_seed_audit_rbac.sql` | Inserts `audit_log` resource; grants admin `read` permission on it |
+
+#### Package: `internal/audit/`
+| File | Responsibility |
+|------|----------------|
+| `auditor.go` | `Auditor` — `Log(ctx, actorID, action, resourceType, resourceID, details)`. Fire-and-forget; errors silently dropped. `UUIDStr(pgtype.UUID) string` helper |
+| `list_events.go` | `ListEventsHandler` — wraps `ListAuditLogs` query with limit/offset |
+| `handler.go` | `Register(mux, q, protectRead) *Auditor` — wires `GET /api/audit-logs`, returns the shared `Auditor` |
+
+#### Endpoint
+- `GET /api/audit-logs?limit=N&offset=N` — protected by `audit_log:read`. Returns `[]AuditLog` ordered by `created_at DESC`.
+
+#### Events Logged
+| Action | Trigger |
+|--------|---------|
+| `session.login` | Successful login |
+| `session.logout` | Logout |
+| `identity.register` | New identity registered (no actor) |
+| `identity.session.revoke` | Admin revokes a session |
+| `role.create` / `.update` / `.delete` | Role CRUD |
+| `role.permission.add` / `.remove` | Permission matrix changes |
+| `identity.role.assign` / `.remove` | Role assignment changes |
+| `oauth2_client.create` / `.update` / `.delete` | OAuth2 client CRUD |
+
+#### Integration Pattern
+`audit.Register(...)` is called first in `router.go` and returns the `*Auditor`. The auditor is then passed as a dependency to `session.Register`, `identity.Register`, `rbac.RegisterRoleRoutes`, and `oauth2.Register`. Each package calls `a.auditor.Log(...)` after successful write operations. `session/logout.go` was updated to look up the session before deletion so the identity ID is available for the log.
+
+#### Frontend
+| File | Change |
+|------|--------|
+| `web/src/pages/AuditLogsPage.tsx` | New page — table of recent events with timestamp, action, resource type, resource ID, actor, and details |
+| `web/src/api.ts` | Added `AuditLog` type + `listAuditLogs` function |
+| `web/src/App.tsx` | Added `/audit-logs` protected route |
+| `web/src/components/app-nav.tsx` | Added "Audit Log" nav link |
+
+#### Known Architecture Notes
+- `internal/identity/handler.go` now imports `minIDM/internal/rbac` (for `IdentityFromContext`) and `minIDM/internal/audit`. No import cycle: rbac does not import identity.
+- `internal/oauth2/handler.go` now imports `minIDM/internal/rbac` and `minIDM/internal/audit`.
+- `session/logout.go` now calls `GetSessionByToken` before `DeleteSession` to capture the identity ID.
+
 ## Next Steps for the Next AI
-1. **Session listing & revocation**: Allow an admin to revoke individual active sessions from the Identity Detail page. Requires a `DELETE /api/identities/{id}/sessions/{token_hash}` endpoint (or similar). The token itself must not be round-tripped; expose a short opaque handle (e.g. first 8 chars of SHA-256) for identification.
-3. **Audit Logging**: Implement a system to track changes to identities, roles, and permissions.
-4. **OAuth2 consent screen**: Add a React page shown during `/oauth2/authorize` listing requested scopes for user approval. Currently auto-approves. Requires storing pending request state (either in DB or a signed cookie) before displaying the consent UI.
-5. **OAuth2 nonce support**: Add `nonce TEXT` column to `oauth2_authorization_codes`; pass it through to the `id_token` JWT `nonce` claim. Required by OIDC libraries that validate nonce (e.g. PKCE + nonce combined).
-6. **Client secret rotation**: `POST /api/oauth2/clients/{id}/rotate-secret` — re-generate, re-hash, return once. Does not affect active tokens (those use JWTs verified by the key, not the secret).
-7. **Token introspection** (RFC 7662): `POST /oauth2/introspect` — lets resource servers validate an access token without parsing JWTs themselves. Useful for non-JWT-aware services.
-8. **Token revocation** (RFC 7009): `POST /oauth2/revoke` — lets clients explicitly invalidate a refresh or access token.
+1. **OAuth2 consent screen**: Add a React page shown during `/oauth2/authorize` listing requested scopes for user approval. Currently auto-approves. Requires storing pending request state (either in DB or a signed cookie) before displaying the consent UI.
+3. **OAuth2 nonce support**: Add `nonce TEXT` column to `oauth2_authorization_codes`; pass it through to the `id_token` JWT `nonce` claim. Required by OIDC libraries that validate nonce (e.g. PKCE + nonce combined).
+4. **Client secret rotation**: `POST /api/oauth2/clients/{id}/rotate-secret` — re-generate, re-hash, return once. Does not affect active tokens (those use JWTs verified by the key, not the secret).
+5. **Token introspection** (RFC 7662): `POST /oauth2/introspect` — lets resource servers validate an access token without parsing JWTs themselves. Useful for non-JWT-aware services.
+6. **Token revocation** (RFC 7009): `POST /oauth2/revoke` — lets clients explicitly invalidate a refresh or access token.
 
 ## CQRS Pattern (for new features)
 Every new feature should follow this shape:

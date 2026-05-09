@@ -4,19 +4,22 @@ import (
 	"encoding/json"
 	"errors"
 	db "minIDM/db/sqlc"
+	"minIDM/internal/audit"
+	"minIDM/internal/rbac"
 	"net/http"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-func Register(mux *http.ServeMux, queries *db.Queries, protectRead, protectWrite func(http.Handler) http.Handler) {
+func Register(mux *http.ServeMux, queries *db.Queries, protectRead, protectWrite func(http.Handler) http.Handler, auditor *audit.Auditor) {
 	api := &API{
 		addRegistration:       NewAddRegistrationHandler(queries),
 		listIdentities:        NewListIdentitiesHandler(queries),
 		getIdentity:           NewGetIdentityHandler(queries),
 		listIdentitySessions:  NewListIdentitySessionsHandler(queries),
 		revokeIdentitySession: NewRevokeIdentitySessionHandler(queries),
+		auditor:               auditor,
 	}
 	api.RegisterRoutes(mux, protectRead, protectWrite)
 }
@@ -27,6 +30,7 @@ type API struct {
 	getIdentity           *GetIdentityHandler
 	listIdentitySessions  *ListIdentitySessionsHandler
 	revokeIdentitySession *RevokeIdentitySessionHandler
+	auditor               *audit.Auditor
 }
 
 func (a *API) RegisterRoutes(mux *http.ServeMux, protectRead, protectWrite func(http.Handler) http.Handler) {
@@ -131,6 +135,10 @@ func (a *API) RevokeSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	actorID, _ := rbac.IdentityFromContext(r.Context())
+	a.auditor.Log(r.Context(), actorID, "identity.session.revoke", "session", handle, map[string]any{
+		"identity_id": r.PathValue("id"),
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -147,7 +155,7 @@ func (a *API) Register(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "password_too_short", http.StatusUnprocessableEntity)
 		return
 	}
-	_, err := a.addRegistration.Handle(r.Context(), AddRegistrationCommand{
+	result, err := a.addRegistration.Handle(r.Context(), AddRegistrationCommand{
 		Email:    req.Email,
 		Password: req.Password,
 	})
@@ -155,6 +163,9 @@ func (a *API) Register(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	a.auditor.Log(r.Context(), pgtype.UUID{}, "identity.register", "identity", audit.UUIDStr(result.ID), map[string]any{
+		"email": req.Email,
+	})
 	w.WriteHeader(http.StatusCreated)
 }
 

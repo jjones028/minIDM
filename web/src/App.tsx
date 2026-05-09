@@ -7,6 +7,7 @@ import RolesPage from '@/pages/RolesPage';
 import RolePermissionsPage from '@/pages/RolePermissionsPage';
 import OAuthClientsPage from '@/pages/OAuthClientsPage';
 import IdentityDetailPage from '@/pages/IdentityDetailPage';
+import AuditLogsPage from '@/pages/AuditLogsPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { checked, authenticated } = useAuth();
@@ -64,6 +65,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <OAuthClientsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/audit-logs"
+        element={
+          <ProtectedRoute>
+            <AuditLogsPage />
           </ProtectedRoute>
         }
       />

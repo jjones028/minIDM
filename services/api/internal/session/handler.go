@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	db "minIDM/db/sqlc"
+	"minIDM/internal/audit"
 	"net/http"
 )
 
@@ -13,13 +14,15 @@ type API struct {
 	login         *LoginHandler
 	logout        *LogoutHandler
 	secureCookies bool
+	auditor       *audit.Auditor
 }
 
-func Register(mux *http.ServeMux, queries *db.Queries, secureCookies bool) {
+func Register(mux *http.ServeMux, queries *db.Queries, secureCookies bool, auditor *audit.Auditor) {
 	api := &API{
 		login:         NewLoginHandler(queries),
 		logout:        NewLogoutHandler(queries),
 		secureCookies: secureCookies,
+		auditor:       auditor,
 	}
 	mux.HandleFunc("POST /api/login", api.Login)
 	mux.HandleFunc("DELETE /api/session", api.Logout)
@@ -48,6 +51,8 @@ func (a *API) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	a.auditor.Log(r.Context(), result.IdentityID, "session.login", "session", "", map[string]any{"email": req.Email})
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     cookieName,
 		Value:    result.Token,
@@ -62,7 +67,9 @@ func (a *API) Login(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) Logout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(cookieName); err == nil {
-		_ = a.logout.Handle(r.Context(), LogoutCommand{Token: cookie.Value})
+		if result, _ := a.logout.Handle(r.Context(), LogoutCommand{Token: cookie.Value}); result != nil {
+			a.auditor.Log(r.Context(), result.IdentityID, "session.logout", "session", "", nil)
+		}
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     cookieName,

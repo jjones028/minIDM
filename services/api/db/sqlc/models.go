@@ -15,6 +15,16 @@ type Action struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type AuditLog struct {
+	ID           pgtype.UUID        `json:"id"`
+	ActorID      pgtype.UUID        `json:"actor_id"`
+	Action       string             `json:"action"`
+	ResourceType string             `json:"resource_type"`
+	ResourceID   pgtype.Text        `json:"resource_id"`
+	Details      []byte             `json:"details"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+}
+
 type Identity struct {
 	ID        pgtype.UUID        `json:"id"`
 	SubjectID string             `json:"subject_id"`
