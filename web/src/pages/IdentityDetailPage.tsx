@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import {
-  getIdentity, getIdentityRoles, getIdentitySessions,
+  getIdentity, getIdentityRoles, getIdentitySessions, revokeIdentitySession,
   isUnauthorized, type Identity, type Role, type IdentitySession,
 } from '@/api';
 import { useAuth } from '@/context/auth';
-import { buttonVariants } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import {
   Card, CardContent, CardHeader, CardTitle,
 } from '@/components/ui/card';
@@ -28,6 +28,7 @@ export default function IdentityDetailPage() {
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [roles, setRoles] = useState<Role[]>([]);
   const [sessions, setSessions] = useState<IdentitySession[]>([]);
+  const [revokingHandle, setRevokingHandle] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,6 +47,21 @@ export default function IdentityDetailPage() {
       });
     return () => { cancelled = true; };
   }, [id]);
+
+  async function handleRevoke(handle: string) {
+    setRevokingHandle(handle);
+    try {
+      await revokeIdentitySession(id!, handle);
+      setSessions(prev => prev.filter(s => s.handle !== handle));
+    } catch (err) {
+      if (isUnauthorized(err)) {
+        setAuthenticated(false);
+        navigate('/login');
+      }
+    } finally {
+      setRevokingHandle(null);
+    }
+  }
 
   if (!identity) return null;
 
@@ -147,13 +163,25 @@ export default function IdentityDetailPage() {
                   <TableRow>
                     <TableHead className="pl-6">Created</TableHead>
                     <TableHead>Expires</TableHead>
+                    <TableHead />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sessions.map((s, i) => (
-                    <TableRow key={i}>
+                  {sessions.map(s => (
+                    <TableRow key={s.handle}>
                       <TableCell className="pl-6">{formatDate(s.created_at)}</TableCell>
                       <TableCell className="text-muted-foreground">{formatDate(s.expires_at)}</TableCell>
+                      <TableCell className="text-right pr-4">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          disabled={revokingHandle === s.handle}
+                          onClick={() => handleRevoke(s.handle)}
+                        >
+                          {revokingHandle === s.handle ? 'Revoking…' : 'Revoke'}
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
