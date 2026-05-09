@@ -94,6 +94,7 @@ export interface OAuthClient {
   redirect_uris: string[];
   scopes: string[];
   is_enabled: boolean;
+  auto_consent: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -103,6 +104,7 @@ export interface CreateOAuthClientData {
   description?: string;
   redirect_uris: string[];
   scopes: string[];
+  auto_consent?: boolean;
 }
 
 export interface UpdateOAuthClientData {
@@ -111,7 +113,30 @@ export interface UpdateOAuthClientData {
   redirect_uris: string[];
   scopes: string[];
   is_enabled: boolean;
+  auto_consent: boolean;
 }
+
+export interface ClientInfo {
+  name: string;
+  description: string | null;
+  scopes: string[];
+  auto_consent: boolean;
+}
+
+export interface ConsentParams {
+  client_id: string;
+  redirect_uri: string;
+  scope: string;
+  state: string;
+  code_challenge: string;
+  code_challenge_method: string;
+}
+
+export const getClientInfo = (clientId: string) =>
+  api.get<ClientInfo>(`/oauth2/client-info?client_id=${encodeURIComponent(clientId)}`);
+
+export const approveConsent = (params: ConsentParams) =>
+  api.post<{ redirect_url: string }>('/oauth2/consent', params);
 
 export interface CreateOAuthClientResult {
   client: OAuthClient;

@@ -57,9 +57,9 @@ func (q *Queries) CreateAuthorizationCode(ctx context.Context, arg CreateAuthori
 }
 
 const createOAuth2Client = `-- name: CreateOAuth2Client :one
-INSERT INTO oauth2_clients (client_id, client_secret_hash, name, description, redirect_uris, scopes)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, client_id, client_secret_hash, name, description, redirect_uris, scopes, is_enabled, created_at, updated_at
+INSERT INTO oauth2_clients (client_id, client_secret_hash, name, description, redirect_uris, scopes, auto_consent)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, client_id, client_secret_hash, name, description, redirect_uris, scopes, is_enabled, created_at, updated_at, auto_consent
 `
 
 type CreateOAuth2ClientParams struct {
@@ -69,6 +69,7 @@ type CreateOAuth2ClientParams struct {
 	Description      pgtype.Text `json:"description"`
 	RedirectUris     []string    `json:"redirect_uris"`
 	Scopes           []string    `json:"scopes"`
+	AutoConsent      bool        `json:"auto_consent"`
 }
 
 func (q *Queries) CreateOAuth2Client(ctx context.Context, arg CreateOAuth2ClientParams) (Oauth2Client, error) {
@@ -79,6 +80,7 @@ func (q *Queries) CreateOAuth2Client(ctx context.Context, arg CreateOAuth2Client
 		arg.Description,
 		arg.RedirectUris,
 		arg.Scopes,
+		arg.AutoConsent,
 	)
 	var i Oauth2Client
 	err := row.Scan(
@@ -92,6 +94,7 @@ func (q *Queries) CreateOAuth2Client(ctx context.Context, arg CreateOAuth2Client
 		&i.IsEnabled,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AutoConsent,
 	)
 	return i, err
 }
@@ -169,7 +172,7 @@ func (q *Queries) GetAuthorizationCode(ctx context.Context, code string) (Oauth2
 }
 
 const getOAuth2ClientByClientID = `-- name: GetOAuth2ClientByClientID :one
-SELECT id, client_id, client_secret_hash, name, description, redirect_uris, scopes, is_enabled, created_at, updated_at FROM oauth2_clients WHERE client_id = $1 LIMIT 1
+SELECT id, client_id, client_secret_hash, name, description, redirect_uris, scopes, is_enabled, created_at, updated_at, auto_consent FROM oauth2_clients WHERE client_id = $1 LIMIT 1
 `
 
 func (q *Queries) GetOAuth2ClientByClientID(ctx context.Context, clientID string) (Oauth2Client, error) {
@@ -186,12 +189,13 @@ func (q *Queries) GetOAuth2ClientByClientID(ctx context.Context, clientID string
 		&i.IsEnabled,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AutoConsent,
 	)
 	return i, err
 }
 
 const getOAuth2ClientByID = `-- name: GetOAuth2ClientByID :one
-SELECT id, client_id, client_secret_hash, name, description, redirect_uris, scopes, is_enabled, created_at, updated_at FROM oauth2_clients WHERE id = $1 LIMIT 1
+SELECT id, client_id, client_secret_hash, name, description, redirect_uris, scopes, is_enabled, created_at, updated_at, auto_consent FROM oauth2_clients WHERE id = $1 LIMIT 1
 `
 
 func (q *Queries) GetOAuth2ClientByID(ctx context.Context, id pgtype.UUID) (Oauth2Client, error) {
@@ -208,6 +212,31 @@ func (q *Queries) GetOAuth2ClientByID(ctx context.Context, id pgtype.UUID) (Oaut
 		&i.IsEnabled,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AutoConsent,
+	)
+	return i, err
+}
+
+const getOAuth2ClientPublicInfo = `-- name: GetOAuth2ClientPublicInfo :one
+SELECT name, description, scopes, auto_consent FROM oauth2_clients
+WHERE client_id = $1 AND is_enabled = TRUE LIMIT 1
+`
+
+type GetOAuth2ClientPublicInfoRow struct {
+	Name        string      `json:"name"`
+	Description pgtype.Text `json:"description"`
+	Scopes      []string    `json:"scopes"`
+	AutoConsent bool        `json:"auto_consent"`
+}
+
+func (q *Queries) GetOAuth2ClientPublicInfo(ctx context.Context, clientID string) (GetOAuth2ClientPublicInfoRow, error) {
+	row := q.db.QueryRow(ctx, getOAuth2ClientPublicInfo, clientID)
+	var i GetOAuth2ClientPublicInfoRow
+	err := row.Scan(
+		&i.Name,
+		&i.Description,
+		&i.Scopes,
+		&i.AutoConsent,
 	)
 	return i, err
 }
@@ -259,7 +288,7 @@ func (q *Queries) GetOAuth2TokenByRefreshHash(ctx context.Context, refreshTokenH
 }
 
 const listOAuth2Clients = `-- name: ListOAuth2Clients :many
-SELECT id, client_id, client_secret_hash, name, description, redirect_uris, scopes, is_enabled, created_at, updated_at FROM oauth2_clients ORDER BY created_at DESC
+SELECT id, client_id, client_secret_hash, name, description, redirect_uris, scopes, is_enabled, created_at, updated_at, auto_consent FROM oauth2_clients ORDER BY created_at DESC
 `
 
 func (q *Queries) ListOAuth2Clients(ctx context.Context) ([]Oauth2Client, error) {
@@ -282,6 +311,7 @@ func (q *Queries) ListOAuth2Clients(ctx context.Context) ([]Oauth2Client, error)
 			&i.IsEnabled,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.AutoConsent,
 		); err != nil {
 			return nil, err
 		}
@@ -313,9 +343,9 @@ func (q *Queries) RevokeOAuth2Token(ctx context.Context, id pgtype.UUID) error {
 
 const updateOAuth2Client = `-- name: UpdateOAuth2Client :one
 UPDATE oauth2_clients
-SET name = $2, description = $3, redirect_uris = $4, scopes = $5, is_enabled = $6, updated_at = NOW()
+SET name = $2, description = $3, redirect_uris = $4, scopes = $5, is_enabled = $6, auto_consent = $7, updated_at = NOW()
 WHERE id = $1
-RETURNING id, client_id, client_secret_hash, name, description, redirect_uris, scopes, is_enabled, created_at, updated_at
+RETURNING id, client_id, client_secret_hash, name, description, redirect_uris, scopes, is_enabled, created_at, updated_at, auto_consent
 `
 
 type UpdateOAuth2ClientParams struct {
@@ -325,6 +355,7 @@ type UpdateOAuth2ClientParams struct {
 	RedirectUris []string    `json:"redirect_uris"`
 	Scopes       []string    `json:"scopes"`
 	IsEnabled    bool        `json:"is_enabled"`
+	AutoConsent  bool        `json:"auto_consent"`
 }
 
 func (q *Queries) UpdateOAuth2Client(ctx context.Context, arg UpdateOAuth2ClientParams) (Oauth2Client, error) {
@@ -335,6 +366,7 @@ func (q *Queries) UpdateOAuth2Client(ctx context.Context, arg UpdateOAuth2Client
 		arg.RedirectUris,
 		arg.Scopes,
 		arg.IsEnabled,
+		arg.AutoConsent,
 	)
 	var i Oauth2Client
 	err := row.Scan(
@@ -348,6 +380,7 @@ func (q *Queries) UpdateOAuth2Client(ctx context.Context, arg UpdateOAuth2Client
 		&i.IsEnabled,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AutoConsent,
 	)
 	return i, err
 }
