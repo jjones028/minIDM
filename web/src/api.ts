@@ -128,3 +128,16 @@ export const deleteOAuthClient = (id: string) => api.delete(`/oauth2/clients/${i
 
 export const isUnauthorized = (err: unknown) =>
   (err as AxiosError)?.response?.status === 401;
+
+export interface AuditLog {
+  id: string;
+  actor_id: string | null;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  details: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export const listAuditLogs = (limit = 100, offset = 0) =>
+  api.get<AuditLog[]>(`/audit-logs?limit=${limit}&offset=${offset}`);

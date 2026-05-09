@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	db "minIDM/db/sqlc"
+	"minIDM/internal/audit"
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -22,9 +23,10 @@ type API struct {
 	listIdentityRoles    *ListIdentityRolesHandler
 	assignRole           *AssignRoleHandler
 	removeRole           *RemoveRoleHandler
+	auditor              *audit.Auditor
 }
 
-func RegisterRoleRoutes(mux *http.ServeMux, q *db.Queries, protectRead, protectWrite func(http.Handler) http.Handler) {
+func RegisterRoleRoutes(mux *http.ServeMux, q *db.Queries, protectRead, protectWrite func(http.Handler) http.Handler, auditor *audit.Auditor) {
 	api := &API{
 		listRoles:            NewListRolesHandler(q),
 		createRole:           NewCreateRoleHandler(q),
@@ -38,6 +40,7 @@ func RegisterRoleRoutes(mux *http.ServeMux, q *db.Queries, protectRead, protectW
 		listIdentityRoles:    NewListIdentityRolesHandler(q),
 		assignRole:           NewAssignRoleHandler(q),
 		removeRole:           NewRemoveRoleHandler(q),
+		auditor:              auditor,
 	}
 
 	mux.Handle("GET /api/roles", protectRead(http.HandlerFunc(api.ListRoles)))
@@ -104,6 +107,10 @@ func (a *API) AssignRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	actorID, _ := IdentityFromContext(r.Context())
+	a.auditor.Log(r.Context(), actorID, "identity.role.assign", "identity", audit.UUIDStr(identityID), map[string]any{
+		"role_id": req.RoleID,
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -128,6 +135,10 @@ func (a *API) CreateRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	actorID, _ := IdentityFromContext(r.Context())
+	a.auditor.Log(r.Context(), actorID, "role.create", "role", audit.UUIDStr(role.ID), map[string]any{
+		"name": role.Name,
+	})
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(role)
@@ -160,6 +171,10 @@ func (a *API) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	actorID, _ := IdentityFromContext(r.Context())
+	a.auditor.Log(r.Context(), actorID, "role.update", "role", audit.UUIDStr(role.ID), map[string]any{
+		"name": role.Name,
+	})
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(role)
 }
@@ -182,6 +197,8 @@ func (a *API) DeleteRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	actorID, _ := IdentityFromContext(r.Context())
+	a.auditor.Log(r.Context(), actorID, "role.delete", "role", audit.UUIDStr(id), nil)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -203,6 +220,10 @@ func (a *API) RemoveRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	actorID, _ := IdentityFromContext(r.Context())
+	a.auditor.Log(r.Context(), actorID, "identity.role.remove", "identity", audit.UUIDStr(identityID), map[string]any{
+		"role_id": audit.UUIDStr(roleID),
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -282,6 +303,11 @@ func (a *API) AddRolePermission(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	actorID, _ := IdentityFromContext(r.Context())
+	a.auditor.Log(r.Context(), actorID, "role.permission.add", "role", audit.UUIDStr(roleID), map[string]any{
+		"resource_id": req.ResourceID,
+		"action_id":   req.ActionID,
+	})
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(perm)
@@ -313,6 +339,10 @@ func (a *API) RemoveRolePermission(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	actorID, _ := IdentityFromContext(r.Context())
+	a.auditor.Log(r.Context(), actorID, "role.permission.remove", "role", audit.UUIDStr(roleID), map[string]any{
+		"permission_id": audit.UUIDStr(permID),
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 

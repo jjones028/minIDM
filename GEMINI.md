@@ -16,13 +16,15 @@
 - **RBAC Model**: Roles → Resources × Actions. The `IdentityHasPermission` SQL query drives all authorization checks.
 - **Dev Proxy**: Vite dev server proxies `/api` → `http://localhost:8080`. This makes browser requests same-origin so `HttpOnly` cookies flow without CORS credential complexity.
 
-## Current State (as of 2026-05-08)
+## Current State (as of 2026-05-08, updated 2026-05-08)
 
 ### Backend
-- **Identity**: Registration (Argon2id hashing), listing, detail retrieval, active session listing, bootstrap admin creation. First identity → `admin` role; subsequent → `viewer` role.
+- **Identity**: Registration (Argon2id hashing), listing, detail retrieval, active session listing + revocation, bootstrap admin creation. First identity → `admin` role; subsequent → `viewer` role.
   - `GET /api/identities/{id}` — identity details (omits `pw_hash`)
-  - `GET /api/identities/{id}/sessions` — active sessions `[{created_at, expires_at}]` (token never exposed)
-  - New queries: `GetIdentityByID` (existed), `ListActiveSessionsByIdentityID` (new, filters `expires_at > NOW()`)
+  - `GET /api/identities/{id}/sessions` — active sessions `[{handle, created_at, expires_at}]` (token never exposed; handle = first 8 hex chars of SHA-256)
+  - `DELETE /api/identities/{id}/sessions/{handle}` — revoke a session by opaque handle (`identity:write`)
+  - New queries: `GetIdentityByID`, `ListActiveSessionsByIdentityID`, `DeleteSession`
+  - `internal/identity/revoke_identity_session.go`: `RevokeIdentitySessionHandler` — matches handle → deletes session row
 - **RBAC**: Full schema — `roles`, `resources`, `actions`, `permissions`, `identity_roles`. Middleware in `internal/rbac/middleware.go`:
   - `Authenticate` reads the `session` HTTP cookie and validates it against the `sessions` table.
   - `Require(resource, action)` checks the identity has the named permission.
@@ -126,11 +128,43 @@ Type mappings (pgx/v5 driver):
 - `UUID` → `pgtype.UUID` | `TEXT NOT NULL` → `string` | `TEXT` nullable → `pgtype.Text`
 - `TEXT[]` → `[]string` | `BOOL NOT NULL` → `bool` | `TIMESTAMPTZ NOT NULL` → `pgtype.Timestamptz`
 
+### Audit Logging (completed 2026-05-08)
+Package `internal/audit/`. Tracks administrative events system-wide.
+
+#### DB Schema (migrations 009–010)
+```
+audit_logs
+  id UUID PK, actor_id UUID→identities (nullable, NULL=system),
+  action TEXT, resource_type TEXT, resource_id TEXT (nullable),
+  details JSONB (nullable), created_at TIMESTAMPTZ
+```
+Migration 010 seeds `audit_log` resource and grants admin `read` permission.
+
+#### Package Structure
+| File | Responsibility |
+|------|----------------|
+| `auditor.go` | `Auditor.Log(ctx, actorID, action, resourceType, resourceID, details)` — fire-and-forget DB insert. `UUIDStr(pgtype.UUID)` helper |
+| `list_events.go` | `ListEventsHandler` — `ListAuditLogs` with limit/offset |
+| `handler.go` | `Register(mux, q, protectRead) *Auditor` — wires `GET /api/audit-logs`, returns shared `Auditor` |
+
+#### Endpoint
+`GET /api/audit-logs?limit=N&offset=N` — protected `audit_log:read`. JSON array ordered by `created_at DESC`.
+
+#### Events
+`session.login`, `session.logout`, `identity.register`, `identity.session.revoke`, `role.create/update/delete`, `role.permission.add/remove`, `identity.role.assign/remove`, `oauth2_client.create/update/delete`.
+
+#### Wiring
+`audit.Register` is called first in `router.go`; the returned `*Auditor` is passed to every other `Register` function. `session/logout.go` updated to look up session before delete to capture actor ID.
+
+#### Frontend
+- `web/src/pages/AuditLogsPage.tsx` — table: timestamp, action badge, resource type, resource ID, actor, details
+- `web/src/api.ts` — `AuditLog` type + `listAuditLogs(limit, offset)`
+- `web/src/App.tsx` — `/audit-logs` protected route
+- `web/src/components/app-nav.tsx` — "Audit Log" nav link
+
 ## Next Steps
-1. **Session revocation**: Add a revoke button to the active sessions table on `IdentityDetailPage`. Requires `DELETE /api/identities/{id}/sessions/{handle}` — expose a short opaque handle (e.g. first 8 chars of SHA-256 of token) rather than the token itself.
-3. **Audit Logging**: Track changes to identities, roles, and permissions.
-4. **OAuth2 consent screen**: Show a React UI during the authorize flow listing requested scopes for user approval (currently auto-approved).
-5. **OAuth2 nonce support**: Add `nonce TEXT` to `oauth2_authorization_codes`; include in `id_token` JWT. Required by some OIDC client libraries.
-6. **Client secret rotation**: `POST /api/oauth2/clients/{id}/rotate-secret`.
-7. **Token introspection** (RFC 7662): `POST /oauth2/introspect`.
-8. **Token revocation** (RFC 7009): `POST /oauth2/revoke`.
+1. **OAuth2 consent screen**: Show a React UI during the authorize flow listing requested scopes for user approval (currently auto-approved).
+3. **OAuth2 nonce support**: Add `nonce TEXT` to `oauth2_authorization_codes`; include in `id_token` JWT. Required by some OIDC client libraries.
+4. **Client secret rotation**: `POST /api/oauth2/clients/{id}/rotate-secret`.
+5. **Token introspection** (RFC 7662): `POST /oauth2/introspect`.
+6. **Token revocation** (RFC 7009): `POST /oauth2/revoke`.
