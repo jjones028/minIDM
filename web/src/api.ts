@@ -69,12 +69,15 @@ export const addRolePermission = (roleId: string, resourceId: string, actionId: 
 export const removeRolePermission = (roleId: string, permId: string) =>
   api.delete(`/roles/${roleId}/permissions/${permId}`);
 export interface IdentitySession {
+  handle: string;
   created_at: string;
   expires_at: string;
 }
 
 export const getIdentity = (id: string) => api.get<Identity>(`/identities/${id}`);
 export const getIdentitySessions = (id: string) => api.get<IdentitySession[]>(`/identities/${id}/sessions`);
+export const revokeIdentitySession = (identityId: string, handle: string) =>
+  api.delete(`/identities/${identityId}/sessions/${handle}`);
 export const getIdentityRoles = (id: string) => api.get<Role[]>(`/identities/${id}/roles`);
 export const assignRole = (identityId: string, roleId: string) =>
   api.post(`/identities/${identityId}/roles`, { role_id: roleId });

@@ -10,28 +10,31 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-func Register(mux *http.ServeMux, queries *db.Queries, protect func(http.Handler) http.Handler) {
+func Register(mux *http.ServeMux, queries *db.Queries, protectRead, protectWrite func(http.Handler) http.Handler) {
 	api := &API{
-		addRegistration:      NewAddRegistrationHandler(queries),
-		listIdentities:       NewListIdentitiesHandler(queries),
-		getIdentity:          NewGetIdentityHandler(queries),
-		listIdentitySessions: NewListIdentitySessionsHandler(queries),
+		addRegistration:       NewAddRegistrationHandler(queries),
+		listIdentities:        NewListIdentitiesHandler(queries),
+		getIdentity:           NewGetIdentityHandler(queries),
+		listIdentitySessions:  NewListIdentitySessionsHandler(queries),
+		revokeIdentitySession: NewRevokeIdentitySessionHandler(queries),
 	}
-	api.RegisterRoutes(mux, protect)
+	api.RegisterRoutes(mux, protectRead, protectWrite)
 }
 
 type API struct {
-	addRegistration      *AddRegistrationHandler
-	listIdentities       *ListIdentitiesHandler
-	getIdentity          *GetIdentityHandler
-	listIdentitySessions *ListIdentitySessionsHandler
+	addRegistration       *AddRegistrationHandler
+	listIdentities        *ListIdentitiesHandler
+	getIdentity           *GetIdentityHandler
+	listIdentitySessions  *ListIdentitySessionsHandler
+	revokeIdentitySession *RevokeIdentitySessionHandler
 }
 
-func (a *API) RegisterRoutes(mux *http.ServeMux, protect func(http.Handler) http.Handler) {
+func (a *API) RegisterRoutes(mux *http.ServeMux, protectRead, protectWrite func(http.Handler) http.Handler) {
 	mux.HandleFunc("POST /api/register", a.Register)
-	mux.Handle("GET /api/identities", protect(http.HandlerFunc(a.List)))
-	mux.Handle("GET /api/identities/{id}", protect(http.HandlerFunc(a.Get)))
-	mux.Handle("GET /api/identities/{id}/sessions", protect(http.HandlerFunc(a.ListSessions)))
+	mux.Handle("GET /api/identities", protectRead(http.HandlerFunc(a.List)))
+	mux.Handle("GET /api/identities/{id}", protectRead(http.HandlerFunc(a.Get)))
+	mux.Handle("GET /api/identities/{id}/sessions", protectRead(http.HandlerFunc(a.ListSessions)))
+	mux.Handle("DELETE /api/identities/{id}/sessions/{handle}", protectWrite(http.HandlerFunc(a.RevokeSession)))
 }
 
 func (a *API) List(w http.ResponseWriter, r *http.Request) {
@@ -90,15 +93,45 @@ func (a *API) ListSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type sessionInfo struct {
+		Handle    string             `json:"handle"`
 		CreatedAt pgtype.Timestamptz `json:"created_at"`
 		ExpiresAt pgtype.Timestamptz `json:"expires_at"`
 	}
 	result := make([]sessionInfo, len(sessions))
 	for i, s := range sessions {
-		result[i] = sessionInfo{CreatedAt: s.CreatedAt, ExpiresAt: s.ExpiresAt}
+		result[i] = sessionInfo{
+			Handle:    sessionHandle(s.Token),
+			CreatedAt: s.CreatedAt,
+			ExpiresAt: s.ExpiresAt,
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
+}
+
+func (a *API) RevokeSession(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUID(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "invalid_id", http.StatusBadRequest)
+		return
+	}
+	handle := r.PathValue("handle")
+	if handle == "" {
+		http.Error(w, "missing_handle", http.StatusBadRequest)
+		return
+	}
+	if err := a.revokeIdentitySession.Handle(r.Context(), RevokeIdentitySessionCommand{
+		IdentityID: id,
+		Handle:     handle,
+	}); err != nil {
+		if err.Error() == "session not found" {
+			http.Error(w, "not_found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *API) Register(w http.ResponseWriter, r *http.Request) {

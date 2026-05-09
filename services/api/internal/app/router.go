@@ -29,12 +29,10 @@ func NewHandler(queries *db.Queries, signingKey *rsa.PrivateKey, issuer string) 
 		json.NewEncoder(w).Encode(map[string]any{"id": id})
 	})))
 
-	// Protected: identity routes require authentication + identity:read permission
-	protect := chain(
-		rbac.Authenticate(queries),
-		rbac.Require("identity", "read", queries),
-	)
-	identity.Register(mux, queries, protect)
+	// Protected: identity routes
+	protectIdentityRead := chain(rbac.Authenticate(queries), rbac.Require("identity", "read", queries))
+	protectIdentityWrite := chain(rbac.Authenticate(queries), rbac.Require("identity", "write", queries))
+	identity.Register(mux, queries, protectIdentityRead, protectIdentityWrite)
 
 	// Protected: role management routes
 	protectRoleRead := chain(rbac.Authenticate(queries), rbac.Require("role", "read", queries))
