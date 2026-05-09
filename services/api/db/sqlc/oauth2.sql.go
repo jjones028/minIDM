@@ -13,9 +13,9 @@ import (
 
 const createAuthorizationCode = `-- name: CreateAuthorizationCode :one
 INSERT INTO oauth2_authorization_codes
-    (code, client_id, identity_id, redirect_uri, scopes, code_challenge, code_challenge_method, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING code, client_id, identity_id, redirect_uri, scopes, code_challenge, code_challenge_method, expires_at, created_at, used
+    (code, client_id, identity_id, redirect_uri, scopes, code_challenge, code_challenge_method, expires_at, nonce)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING code, client_id, identity_id, redirect_uri, scopes, code_challenge, code_challenge_method, expires_at, created_at, used, nonce
 `
 
 type CreateAuthorizationCodeParams struct {
@@ -27,6 +27,7 @@ type CreateAuthorizationCodeParams struct {
 	CodeChallenge       string             `json:"code_challenge"`
 	CodeChallengeMethod string             `json:"code_challenge_method"`
 	ExpiresAt           pgtype.Timestamptz `json:"expires_at"`
+	Nonce               pgtype.Text        `json:"nonce"`
 }
 
 func (q *Queries) CreateAuthorizationCode(ctx context.Context, arg CreateAuthorizationCodeParams) (Oauth2AuthorizationCode, error) {
@@ -39,6 +40,7 @@ func (q *Queries) CreateAuthorizationCode(ctx context.Context, arg CreateAuthori
 		arg.CodeChallenge,
 		arg.CodeChallengeMethod,
 		arg.ExpiresAt,
+		arg.Nonce,
 	)
 	var i Oauth2AuthorizationCode
 	err := row.Scan(
@@ -52,6 +54,7 @@ func (q *Queries) CreateAuthorizationCode(ctx context.Context, arg CreateAuthori
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.Used,
+		&i.Nonce,
 	)
 	return i, err
 }
@@ -148,7 +151,7 @@ func (q *Queries) DeleteOAuth2Client(ctx context.Context, id pgtype.UUID) error 
 }
 
 const getAuthorizationCode = `-- name: GetAuthorizationCode :one
-SELECT code, client_id, identity_id, redirect_uri, scopes, code_challenge, code_challenge_method, expires_at, created_at, used FROM oauth2_authorization_codes
+SELECT code, client_id, identity_id, redirect_uri, scopes, code_challenge, code_challenge_method, expires_at, created_at, used, nonce FROM oauth2_authorization_codes
 WHERE code = $1 AND used = FALSE AND expires_at > NOW()
 LIMIT 1
 `
@@ -167,6 +170,7 @@ func (q *Queries) GetAuthorizationCode(ctx context.Context, code string) (Oauth2
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.Used,
+		&i.Nonce,
 	)
 	return i, err
 }

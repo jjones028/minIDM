@@ -35,6 +35,7 @@ func (h *ConsentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		State               string `json:"state"`
 		CodeChallenge       string `json:"code_challenge"`
 		CodeChallengeMethod string `json:"code_challenge_method"`
+		Nonce               string `json:"nonce"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid_request", http.StatusBadRequest)
@@ -107,6 +108,7 @@ func (h *ConsentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		CodeChallenge:       body.CodeChallenge,
 		CodeChallengeMethod: method,
 		ExpiresAt:           pgtype.Timestamptz{Time: expiresAt, Valid: true},
+		Nonce:               pgtype.Text{String: body.Nonce, Valid: body.Nonce != ""},
 	}); err != nil {
 		http.Error(w, "server_error", http.StatusInternalServerError)
 		return

@@ -36,6 +36,7 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	state := qp.Get("state")
 	codeChallenge := qp.Get("code_challenge")
 	codeChallengeMethod := qp.Get("code_challenge_method")
+	nonce := qp.Get("nonce")
 
 	// --- Validate params that CANNOT redirect on error ---
 
@@ -110,14 +111,18 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// consent page. All validated params are passed as query params so the
 	// consent page can display them and POST them back to /api/oauth2/consent.
 	if !client.AutoConsent {
-		consentURL := "/oauth2/consent?" + url.Values{
+		consentParams := url.Values{
 			"client_id":             {clientID},
 			"redirect_uri":          {redirectURI},
 			"scope":                 {strings.Join(scopes, " ")},
 			"state":                 {state},
 			"code_challenge":        {codeChallenge},
 			"code_challenge_method": {codeChallengeMethod},
-		}.Encode()
+		}
+		if nonce != "" {
+			consentParams.Set("nonce", nonce)
+		}
+		consentURL := "/oauth2/consent?" + consentParams.Encode()
 		http.Redirect(w, r, consentURL, http.StatusFound)
 		return
 	}
@@ -140,6 +145,7 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		CodeChallenge:       codeChallenge,
 		CodeChallengeMethod: codeChallengeMethod,
 		ExpiresAt:           pgtype.Timestamptz{Time: expiresAt, Valid: true},
+		Nonce:               pgtype.Text{String: nonce, Valid: nonce != ""},
 	}); err != nil {
 		redirectWithError(w, redirectURI, state, "server_error", "failed to save authorization code")
 		return
