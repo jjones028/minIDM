@@ -101,7 +101,7 @@ Migration 008 seeds `oauth2_client` resource and grants admin full permissions.
 | `services/api/internal/rbac/handler.go` | Role and Permission management API (also owns identity role routes) |
 | `services/api/internal/session/handler.go` | Login / logout cookie logic |
 | `services/api/internal/oauth2/` | Full OAuth2/OIDC provider package |
-| `services/api/db/migrations/` | `001`–`011` (identity, rbac, sessions, builtin, oauth2 ×4, audit ×2, auto_consent) |
+| `services/api/db/migrations/` | `001`–`012` (identity, rbac, sessions, builtin, oauth2 ×4, audit ×2, auto_consent, nonce) |
 | `services/api/db/queries/sessions.sql` | Includes `ListActiveSessionsByIdentityID` |
 | `services/api/db/queries/oauth2.sql` | Sqlc source for OAuth2 queries |
 | `web/src/context/auth.tsx` | React auth state |
@@ -192,8 +192,23 @@ Now accepts `authenticate func(http.Handler) http.Handler` as final param (gates
 - No pending-consent DB table: params are re-validated on POST (safe — PKCE binds the code to the verifier holder).
 - `auto_consent` defaults to `false` for all clients.
 
+### OAuth2 Nonce Support (completed 2026-05-08)
+`nonce` flows from the authorize request → auth code → `id_token` JWT claim, satisfying OIDC libraries that validate nonce.
+
+**Migration**: `012_add_nonce_to_auth_codes.sql` — `ALTER TABLE oauth2_authorization_codes ADD COLUMN nonce TEXT` (nullable).
+
+**Backend changes**:
+- `authorize.go`: reads `nonce` query param; included in consent redirect URL if present; stored in `CreateAuthorizationCode` as `pgtype.Text`
+- `consent.go`: reads `nonce` from JSON body; passed to `CreateAuthorizationCode`
+- `token.go`: `tokenClaims` gains `Nonce string \`json:"nonce,omitempty"\``; `issueAndRespond(... nonce string)` sets claim when `openid` in scopes; refresh grant passes `""` (nonce not round-tripped)
+
+**Frontend changes**:
+- `ConsentPage.tsx`: reads `nonce` from URL params; forwards in `approveConsent` POST body
+- `api.ts`: `ConsentParams` gains `nonce?: string`
+
+**Design decisions**: nonce only stamped in `id_token` (not access token) when `openid` scope present; nullable column leaves existing auth codes unaffected.
+
 ## Next Steps
-1. **OAuth2 nonce support**: Add `nonce TEXT` to `oauth2_authorization_codes`; include in `id_token` JWT. Required by some OIDC client libraries.
-2. **Client secret rotation**: `POST /api/oauth2/clients/{id}/rotate-secret`.
-3. **Token introspection** (RFC 7662): `POST /oauth2/introspect`.
-4. **Token revocation** (RFC 7009): `POST /oauth2/revoke`.
+1. **Client secret rotation**: `POST /api/oauth2/clients/{id}/rotate-secret`.
+2. **Token introspection** (RFC 7662): `POST /oauth2/introspect`.
+3. **Token revocation** (RFC 7009): `POST /oauth2/revoke`.

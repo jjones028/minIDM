@@ -52,6 +52,7 @@ type Oauth2AuthorizationCode struct {
 	ExpiresAt           pgtype.Timestamptz `json:"expires_at"`
 	CreatedAt           pgtype.Timestamptz `json:"created_at"`
 	Used                bool               `json:"used"`
+	Nonce               pgtype.Text        `json:"nonce"`
 }
 
 type Oauth2Client struct {

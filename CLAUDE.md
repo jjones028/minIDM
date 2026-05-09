@@ -232,11 +232,30 @@ Now accepts an additional `authenticate func(http.Handler) http.Handler` param (
 - **Auto-consent default is `false`**: all existing and new clients require explicit consent unless an admin enables the flag.
 - **Consent POST is session-gated**: `rbac.Authenticate` middleware is applied; unauthenticated POSTs get 401.
 
+### OAuth2 Nonce Support (completed 2026-05-08)
+`nonce` parameter flows from the authorization request through to the `id_token` JWT claim, satisfying OIDC libraries that validate nonce (e.g. PKCE + nonce combined).
+
+#### DB Migration
+| Migration | Purpose |
+|-----------|---------|
+| `012_add_nonce_to_auth_codes.sql` | `ALTER TABLE oauth2_authorization_codes ADD COLUMN nonce TEXT` (nullable) |
+
+#### Changes
+- **`authorize.go`**: reads `nonce` query param; passes to consent redirect URL if present; passes to `CreateAuthorizationCode` as `pgtype.Text`
+- **`consent.go`**: reads `nonce` from JSON body; passes to `CreateAuthorizationCode`
+- **`token.go`**: `tokenClaims` gains `Nonce string \`json:"nonce,omitempty"\``; `issueAndRespond` accepts `nonce string` param; sets `claims.Nonce` when `openid` scope is present and nonce is non-empty; refresh token grant passes `""` (nonce is not round-tripped on refresh)
+- **`ConsentPage.tsx`**: reads `nonce` URL param, forwards it in the `approveConsent` POST body
+- **`api.ts`**: `ConsentParams` gains `nonce?: string`
+
+#### Key Design Decisions
+- Nonce is only included in `id_token` when the `openid` scope is requested (per OIDC spec).
+- Refresh token grant does not re-include the original nonce — nonce is a one-time binding per auth code exchange.
+- Nonce is stored as a nullable `TEXT` column so existing auth codes are unaffected by the migration.
+
 ## Next Steps for the Next AI
-1. **OAuth2 nonce support**: Add `nonce TEXT` column to `oauth2_authorization_codes`; pass it through to the `id_token` JWT `nonce` claim. Required by OIDC libraries that validate nonce (e.g. PKCE + nonce combined).
-2. **Client secret rotation**: `POST /api/oauth2/clients/{id}/rotate-secret` — re-generate, re-hash, return once. Does not affect active tokens (those use JWTs verified by the key, not the secret).
-3. **Token introspection** (RFC 7662): `POST /oauth2/introspect` — lets resource servers validate an access token without parsing JWTs themselves. Useful for non-JWT-aware services.
-4. **Token revocation** (RFC 7009): `POST /oauth2/revoke` — lets clients explicitly invalidate a refresh or access token.
+1. **Client secret rotation**: `POST /api/oauth2/clients/{id}/rotate-secret` — re-generate, re-hash, return once. Does not affect active tokens (those use JWTs verified by the key, not the secret).
+2. **Token introspection** (RFC 7662): `POST /oauth2/introspect` — lets resource servers validate an access token without parsing JWTs themselves. Useful for non-JWT-aware services.
+3. **Token revocation** (RFC 7009): `POST /oauth2/revoke` — lets clients explicitly invalidate a refresh or access token.
 
 ## CQRS Pattern (for new features)
 Every new feature should follow this shape:

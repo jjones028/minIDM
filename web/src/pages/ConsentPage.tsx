@@ -19,12 +19,13 @@ export default function ConsentPage() {
 
   // Read params passed by the authorize redirect.
   const params = new URLSearchParams(window.location.search);
-  const clientId           = params.get('client_id') ?? '';
-  const redirectUri        = params.get('redirect_uri') ?? '';
-  const scope              = params.get('scope') ?? 'openid';
-  const state              = params.get('state') ?? '';
-  const codeChallenge      = params.get('code_challenge') ?? '';
+  const clientId            = params.get('client_id') ?? '';
+  const redirectUri         = params.get('redirect_uri') ?? '';
+  const scope               = params.get('scope') ?? 'openid';
+  const state               = params.get('state') ?? '';
+  const codeChallenge       = params.get('code_challenge') ?? '';
   const codeChallengeMethod = params.get('code_challenge_method') ?? 'S256';
+  const nonce               = params.get('nonce') ?? '';
 
   const [clientInfo, setClientInfo] = useState<ClientInfo | null>(null);
   const [error, setError]           = useState('');
@@ -52,6 +53,7 @@ export default function ConsentPage() {
         state,
         code_challenge:        codeChallenge,
         code_challenge_method: codeChallengeMethod,
+        nonce,
       });
       window.location.href = data.redirect_url;
     } catch (err) {

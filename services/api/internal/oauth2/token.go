@@ -24,6 +24,7 @@ type tokenClaims struct {
 	jwt.RegisteredClaims
 	Email string `json:"email,omitempty"`
 	Scope string `json:"scope,omitempty"`
+	Nonce string `json:"nonce,omitempty"`
 }
 
 // TokenHandler handles POST /oauth2/token.
@@ -118,7 +119,7 @@ func (h *TokenHandler) handleAuthorizationCode(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	h.issueAndRespond(w, r, client, identity, authCode.Scopes)
+	h.issueAndRespond(w, r, client, identity, authCode.Scopes, authCode.Nonce.String)
 }
 
 // handleRefreshToken exchanges a refresh token for a new access token.
@@ -169,11 +170,12 @@ func (h *TokenHandler) handleRefreshToken(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	h.issueAndRespond(w, r, client, identity, stored.Scopes)
+	h.issueAndRespond(w, r, client, identity, stored.Scopes, "")
 }
 
 // issueAndRespond mints tokens and writes the token response JSON.
-func (h *TokenHandler) issueAndRespond(w http.ResponseWriter, r *http.Request, client db.Oauth2Client, identity db.Identity, scopes []string) {
+// nonce is included in the id_token claim when non-empty (OIDC nonce binding).
+func (h *TokenHandler) issueAndRespond(w http.ResponseWriter, r *http.Request, client db.Oauth2Client, identity db.Identity, scopes []string, nonce string) {
 	scopeStr := strings.Join(scopes, " ")
 	hasOpenID := containsScope(scopes, "openid")
 	hasEmail := containsScope(scopes, "email")
@@ -195,6 +197,9 @@ func (h *TokenHandler) issueAndRespond(w http.ResponseWriter, r *http.Request, c
 	}
 	if hasEmail {
 		claims.Email = identity.Email
+	}
+	if hasOpenID && nonce != "" {
+		claims.Nonce = nonce
 	}
 
 	t := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)

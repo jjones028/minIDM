@@ -27,8 +27,8 @@ DELETE FROM oauth2_clients WHERE id = $1;
 
 -- name: CreateAuthorizationCode :one
 INSERT INTO oauth2_authorization_codes
-    (code, client_id, identity_id, redirect_uri, scopes, code_challenge, code_challenge_method, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    (code, client_id, identity_id, redirect_uri, scopes, code_challenge, code_challenge_method, expires_at, nonce)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING *;
 
 -- name: GetAuthorizationCode :one
