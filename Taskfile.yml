@@ -63,8 +63,9 @@ tasks:
     dir: "{{.API_DIR}}"
     cmds:
       # Copy web dist into internal app for embedding
-      - rm -rf internal/app/dist/*
-      - cp -r ../../web/dist/* internal/app/dist/
+      - rm -rf internal/app/dist
+      - mkdir -p internal/app/dist
+      - cp -r ../../web/dist/. internal/app/dist/
       - go build -o bin/server cmd/server/main.go
     sources:
       - "cmd/server/**/*.go"

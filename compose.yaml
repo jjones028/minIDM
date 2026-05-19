@@ -1,6 +1,7 @@
 volumes:
   idm_database:
-  
+  app_keys:
+
 services:
   db:
     container_name: minidm-db
@@ -14,7 +15,38 @@ services:
       - "5432:5432"
     volumes:
       - idm_database:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d idm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     labels:
       com.minidm.project: "minidm"
       com.minidm.service: "db"
       com.minidm.managed-by: "testcontainers"
+
+  migrate:
+    build: .
+    entrypoint: ["/app/migrate"]
+    environment:
+      DATABASE_URL: postgres://user:pass@db:5432/idm?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://user:pass@db:5432/idm?sslmode=disable
+      OAUTH2_ISSUER: http://localhost:8080
+      OAUTH2_KEY_PATH: /app/keys/oauth2_signing.key
+      SECURE_COOKIES: "false"
+    volumes:
+      - app_keys:/app/keys
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
