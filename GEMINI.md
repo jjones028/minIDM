@@ -14,17 +14,18 @@
   - `<command>.go` / `<query>.go`: Isolated logic handlers that execute against `db.Queries`.
   - Business rules (e.g., protecting built-in roles, PKCE validation) are enforced in Command handlers, not HTTP handlers.
 - **RBAC Model**: Roles → Resources × Actions. The `IdentityHasPermission` SQL query drives all authorization checks.
-- **Dev Proxy**: Vite dev server proxies `/api` → `http://localhost:8080`. This makes browser requests same-origin so `HttpOnly` cookies flow without CORS credential complexity.
+- **Dev Proxy**: Vite dev server proxies `/api`, `/oauth2`, and `/.well-known` → `http://localhost:8080`. All three are required: OAuth2 authorize redirects use relative URLs that must resolve on the Vite port (5173).
 
-## Current State (as of 2026-05-08, updated 2026-05-08)
+## Current State (as of 2026-05-19)
 
 ### Backend
-- **Identity**: Registration (Argon2id hashing), listing, detail retrieval, active session listing + revocation, bootstrap admin creation. First identity → `admin` role; subsequent → `viewer` role.
+- **Identity**: Registration (Argon2id hashing), listing, detail retrieval, enable/disable, admin password reset, active session listing + revocation. First identity → `admin` role; subsequent → `viewer` role.
   - `GET /api/identities/{id}` — identity details (omits `pw_hash`)
   - `GET /api/identities/{id}/sessions` — active sessions `[{handle, created_at, expires_at}]` (token never exposed; handle = first 8 hex chars of SHA-256)
   - `DELETE /api/identities/{id}/sessions/{handle}` — revoke a session by opaque handle (`identity:write`)
-  - New queries: `GetIdentityByID`, `ListActiveSessionsByIdentityID`, `DeleteSession`
-  - `internal/identity/revoke_identity_session.go`: `RevokeIdentitySessionHandler` — matches handle → deletes session row
+  - `PATCH /api/identities/{id}/enabled` — enable/disable identity (`identity:write`); disabled identities cannot log in
+  - `POST /api/identities/{id}/reset-password` — admin password reset (`identity:write`); re-hashes Argon2id
+  - Key files: `get_identity.go`, `list_identity_sessions.go`, `revoke_identity_session.go`, `set_enabled.go`, `reset_password.go`
 - **RBAC**: Full schema — `roles`, `resources`, `actions`, `permissions`, `identity_roles`. Middleware in `internal/rbac/middleware.go`:
   - `Authenticate` reads the `session` HTTP cookie and validates it against the `sessions` table.
   - `Require(resource, action)` checks the identity has the named permission.
@@ -59,14 +60,24 @@ Migration 008 seeds `oauth2_client` resource and grants admin full permissions.
 #### Public Endpoints (no RBAC)
 | Endpoint | Notes |
 |----------|-------|
-| `GET /.well-known/openid-configuration` | OIDC discovery document |
+| `GET /.well-known/openid-configuration` | OIDC discovery document (includes introspection + revocation endpoints) |
 | `GET /oauth2/jwks.json` | RSA-2048 public key as JWKS |
 | `GET /oauth2/authorize` | Checks session cookie itself; redirects unauthenticated to `/login?next=<url>` |
-| `POST /oauth2/token` | Form-encoded; `grant_type=authorization_code` or `refresh_token`; client authenticates via body params |
+| `POST /oauth2/token` | Form-encoded; `grant_type=authorization_code` or `refresh_token` |
+| `POST /oauth2/introspect` | RFC 7662; requires client auth; returns `{active: true/false, ...claims}` |
+| `POST /oauth2/revoke` | RFC 7009; requires client auth; always returns 200 |
 | `GET /oauth2/userinfo` | Bearer token (RS256 JWT); validates signature + JTI revocation |
 
 #### Admin API (RBAC: `oauth2_client` resource)
-`GET/POST /api/oauth2/clients` and `GET/PATCH/DELETE /api/oauth2/clients/{id}`. The `client_secret_hash` field is never exposed; plaintext secret is returned only on creation inside `{ client, client_secret }`.
+`GET/POST /api/oauth2/clients` and `GET/PATCH/DELETE /api/oauth2/clients/{id}`. The `client_secret_hash` field is never exposed; plaintext secret returned only on creation in `{ client, client_secret }`.
+
+- `POST /api/oauth2/clients/{id}/rotate-secret` — re-generate + re-hash secret; returns `{ client_secret }` once. 422 for public clients.
+- `GET /api/oauth2/tokens` — list all active (non-revoked, non-expired) tokens
+- `DELETE /api/oauth2/tokens/{id}` — admin-revoke a token by DB UUID
+- `POST /api/oauth2/tokens/inspect` — decode + validate a raw token string; returns claims + DB status
+
+#### Public Client Support
+`client_secret_hash IS NULL` → public client (for native/mobile apps, RFC 8252). Migration `013_public_client_support.sql` makes the column nullable. `authenticateClient()` helper in `crypto.go` accepts `client_id` only for public clients. PKCE remains mandatory for all clients.
 
 #### Token Design
 - **Access token**: RS256-signed JWT. Claims: `sub` (identity.subject_id), `iss`, `aud` (client_id), `exp`, `iat`, `jti` (random UUID), `scope`, `email` (if requested).
@@ -83,12 +94,14 @@ Migration 008 seeds `oauth2_client` resource and grants admin full permissions.
 
 ### Frontend
 - **Auth context** (`web/src/context/auth.tsx`): Calls `GET /api/me` on mount to establish initial auth state.
-- **Routing** (`web/src/App.tsx`): `ProtectedRoute` + routes for `/`, `/identities/:id`, `/identities/:id/roles`, `/roles`, `/roles/:id/permissions`, `/oauth2/clients`.
-- **API client** (`web/src/api.ts`): Axios with `baseURL: '/api'`. Includes `getIdentity`, `getIdentitySessions`, and OAuth2 client CRUD functions.
-- **Navigation** (`web/src/components/app-nav.tsx`): Identities | Roles | OAuth2 Clients.
-- **AuthPage** (`web/src/pages/AuthPage.tsx`): Reads `?next=` query param; redirects there after login (supports OAuth2 authorize flow).
-- **IdentityDetailPage** (`web/src/pages/IdentityDetailPage.tsx`): Shows subject ID, enabled/disabled status, assigned roles (with "Manage Roles" link), and active sessions. Reached via "View" button from the dashboard.
-- **OAuthClientsPage** (`web/src/pages/OAuthClientsPage.tsx`): Create/list/edit/delete clients. Shows `client_id` with copy button. Displays client secret in a modal on creation ("shown once").
+- **Routing** (`web/src/App.tsx`): `ProtectedRoute` + routes for `/`, `/identities/:id`, `/identities/:id/roles`, `/roles`, `/roles/:id/permissions`, `/oauth2/clients`, `/oauth2/tokens`, `/audit-logs`.
+- **API client** (`web/src/api.ts`): Axios with `baseURL: '/api'`. All API calls centralized here with TypeScript types.
+- **Navigation** (`web/src/components/app-nav.tsx`): Identities | Roles | OAuth2 Clients | Tokens | Audit Log.
+- **AuthPage** (`web/src/pages/AuthPage.tsx`): Reads `?next=` query param; uses `window.location.href` (not React Router `navigate`) so backend OAuth2 redirects work correctly.
+- **IdentityDetailPage** (`web/src/pages/IdentityDetailPage.tsx`): Subject ID, enable/disable toggle, password reset form, assigned roles, active sessions with revoke buttons.
+- **OAuthClientsPage** (`web/src/pages/OAuthClientsPage.tsx`): Create/list/edit/delete clients. Public client checkbox. Amber `public` badge. Blue `auto-consent` badge. Secret shown once in modal.
+- **TokensPage** (`web/src/pages/TokensPage.tsx`): List active tokens with admin revoke; raw token inspect form showing decoded claims.
+- **AuditLogsPage** (`web/src/pages/AuditLogsPage.tsx`): Filterable (resource type, action prefix, actor UUID, date range), paginated, shows actor email.
 - **Shadcn components installed**: `button`, `card`, `input`, `table`, `select`. Note: no `badge` component — use inline `<span>` with Tailwind classes for status indicators.
 
 ## Critical Files
@@ -96,18 +109,21 @@ Migration 008 seeds `oauth2_client` resource and grants admin full permissions.
 |------|---------|
 | `services/api/internal/app/router.go` | All route registration and middleware chains |
 | `services/api/internal/app/server.go` | Startup: DB pool, RSA key load, issuer config |
-| `services/api/internal/identity/handler.go` | Identity API — list, get, sessions. Has its own `parseUUID` helper |
+| `services/api/internal/identity/handler.go` | Identity API — all endpoints; has its own `parseUUID` helper |
 | `services/api/internal/rbac/middleware.go` | `Authenticate` + `Require` middleware |
 | `services/api/internal/rbac/handler.go` | Role and Permission management API (also owns identity role routes) |
 | `services/api/internal/session/handler.go` | Login / logout cookie logic |
-| `services/api/internal/oauth2/` | Full OAuth2/OIDC provider package |
-| `services/api/db/migrations/` | `001`–`012` (identity, rbac, sessions, builtin, oauth2 ×4, audit ×2, auto_consent, nonce) |
-| `services/api/db/queries/sessions.sql` | Includes `ListActiveSessionsByIdentityID` |
-| `services/api/db/queries/oauth2.sql` | Sqlc source for OAuth2 queries |
+| `services/api/internal/oauth2/` | Full OAuth2/OIDC provider package (authorize, token, introspect, revoke, userinfo, JWKS, discovery, clients, tokens) |
+| `services/api/internal/audit/` | Audit logging package |
+| `services/api/db/migrations/` | `001`–`013` (identity, rbac, sessions, builtin, oauth2 ×4, audit ×2, auto_consent, nonce, public_client) |
+| `services/api/db/migrations/embed.go` | `//go:embed *.sql` for production migrate binary |
+| `services/api/cmd/migrate/main.go` | Standalone migration binary (used in Docker) |
+| `services/api/db/queries/audit.sql` | Filtered audit log queries with LEFT JOIN for actor email |
 | `web/src/context/auth.tsx` | React auth state |
 | `web/src/api.ts` | All API calls + TypeScript types |
 | `web/src/components/app-nav.tsx` | Main application navigation |
-| `web/vite.config.js` | Vite proxy (`/api` → `:8080`) |
+| `web/vite.config.js` | Vite proxy (`/api`, `/oauth2`, `/.well-known` → `:8080`) |
+| `compose.yaml` | Production Docker Compose (db + migrate + app) |
 
 ## CQRS Pattern (follow this for all new features)
 ```
@@ -147,18 +163,21 @@ Migration 010 seeds `audit_log` resource and grants admin `read` permission.
 | `list_events.go` | `ListEventsHandler` — `ListAuditLogs` with limit/offset |
 | `handler.go` | `Register(mux, q, protectRead) *Auditor` — wires `GET /api/audit-logs`, returns shared `Auditor` |
 
-#### Endpoint
-`GET /api/audit-logs?limit=N&offset=N` — protected `audit_log:read`. JSON array ordered by `created_at DESC`.
+#### Endpoints
+- `GET /api/audit-logs?resource_type=X&action=Y&actor_id=Z&since=T&until=T&limit=N&offset=N` — protected `audit_log:read`. Returns `{"total": N, "logs": [...]}`. All filters optional; default page size 50.
+- `GET /api/audit-logs/resource-types` — protected `audit_log:read`. Returns distinct resource type values for the filter dropdown.
+
+`ListAuditLogsFiltered` LEFT JOINs `identities` to return `actor_email`. sqlc generates unnamed `$N::type` params as `Column1`–`Column5`.
 
 #### Events
-`session.login`, `session.logout`, `identity.register`, `identity.session.revoke`, `role.create/update/delete`, `role.permission.add/remove`, `identity.role.assign/remove`, `oauth2_client.create/update/delete`.
+`session.login`, `session.logout`, `identity.register`, `identity.session.revoke`, `identity.enable`, `identity.disable`, `identity.password.reset`, `role.create/update/delete`, `role.permission.add/remove`, `identity.role.assign/remove`, `oauth2_client.create/update/delete/rotate_secret`, `oauth2_token.revoke`.
 
 #### Wiring
 `audit.Register` is called first in `router.go`; the returned `*Auditor` is passed to every other `Register` function. `session/logout.go` updated to look up session before delete to capture actor ID.
 
 #### Frontend
-- `web/src/pages/AuditLogsPage.tsx` — table: timestamp, action badge, resource type, resource ID, actor, details
-- `web/src/api.ts` — `AuditLog` type + `listAuditLogs(limit, offset)`
+- `web/src/pages/AuditLogsPage.tsx` — filter bar (resource type dropdown, action prefix, actor UUID, since/until), paginated table, actor email display
+- `web/src/api.ts` — `AuditLog{actor_email}`, `AuditLogsResponse{total, logs}`, `AuditLogsFilter`, `listAuditLogs(filter)`, `listAuditResourceTypes()`
 - `web/src/App.tsx` — `/audit-logs` protected route
 - `web/src/components/app-nav.tsx` — "Audit Log" nav link
 
@@ -208,7 +227,35 @@ Now accepts `authenticate func(http.Handler) http.Handler` as final param (gates
 
 **Design decisions**: nonce only stamped in `id_token` (not access token) when `openid` scope present; nullable column leaves existing auth codes unaffected.
 
+### Production Deployment (completed 2026-05-19)
+
+#### Docker Compose (`compose.yaml`)
+Three services: `db` (PostgreSQL 18 with `pg_isready` health check), `migrate` (standalone migration runner, `restart: "no"`), `app` (the unified binary, depends on migrate completing).
+
+```bash
+docker compose up -d   # start all services
+docker compose down    # stop (data preserved in named volumes)
+```
+
+Named volumes: `idm_database` (Postgres), `app_keys` (RSA signing key — persists across restarts).
+
+**Critical**: compose must use `entrypoint: ["/app/migrate"]`, NOT `command:`. The Dockerfile sets `ENTRYPOINT ["/app/minIDM"]`; `command:` would be appended as args to that entrypoint.
+
+#### Standalone Migrate Binary
+`services/api/cmd/migrate/main.go` embeds all migrations via `//go:embed *.sql` in `db/migrations/embed.go` and runs `goose.Up` via Go API. Independent of dev mode — `task dev` still uses Testcontainers + goose CLI.
+
+#### Taskfile Fix
+`build:api` task uses `cp -r ../../web/dist/. internal/app/dist/` (note the trailing `.`) to avoid Windows coreutils glob failures when copying the directory contents.
+
+### OIDC Test Client (`~/Projects/oidc-test-client`) (completed 2026-05-19)
+Reference Node.js/Express test application for end-to-end OIDC testing. Implements full authorization code flow with PKCE. Tokens stored server-side in Express session; browser only sees opaque `connect.sid` cookie.
+
+Rewrites discovery endpoints from the server's internal issuer to the configured `ISSUER` so all OAuth2 calls route through Vite's proxy in dev mode.
+
+Configure with `.env`: `ISSUER=http://localhost:5173`, `CLIENT_ID`, `CLIENT_SECRET`, `REDIRECT_URI=http://localhost:3000/callback`.
+
 ## Next Steps
-1. **Client secret rotation**: `POST /api/oauth2/clients/{id}/rotate-secret`.
-2. **Token introspection** (RFC 7662): `POST /oauth2/introspect`.
-3. **Token revocation** (RFC 7009): `POST /oauth2/revoke`.
+1. **Self-service password reset** — email-based reset link flow (currently only admins can reset via API).
+2. **User account page** — let authenticated users see/revoke their own sessions and tokens (currently admin-only).
+3. **Dynamic client registration** (RFC 7591) — self-registration without requiring admin creation.
+4. **Scope-based consent** — per-scope consent checkboxes rather than all-or-nothing approval.

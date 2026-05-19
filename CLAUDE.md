@@ -13,7 +13,7 @@
 - **Dev Proxy**: In development, Vite proxies `/api` → `http://localhost:8080`, making all requests same-origin so cookies work without CORS changes.
 - **CQRS Pattern**: Each feature has `handler.go` (HTTP wiring + JSON) + per-command/query files. Business rules live in command handlers, never in HTTP handlers.
 
-## Current State (as of 2026-05-08)
+## Current State (as of 2026-05-19)
 
 ### Completed
 - **Identity registration & listing** — full CQRS-based flow with Argon2id password hashing.
@@ -252,10 +252,211 @@ Now accepts an additional `authenticate func(http.Handler) http.Handler` param (
 - Refresh token grant does not re-include the original nonce — nonce is a one-time binding per auth code exchange.
 - Nonce is stored as a nullable `TEXT` column so existing auth codes are unaffected by the migration.
 
+### Client Secret Rotation (completed 2026-05-19)
+Admin endpoint to regenerate a client's secret without invalidating existing tokens.
+
+New endpoint (protected: `oauth2_client:write`):
+- `POST /api/oauth2/clients/{id}/rotate-secret` — returns `{ client_secret }` once. Returns 422 for public clients.
+
+| File | Responsibility |
+|------|----------------|
+| `internal/oauth2/rotate_secret.go` | `RotateSecretHandler` — fetches client, returns `ErrPublicClient` if no hash, generates new secret, re-hashes Argon2id, updates DB |
+
+Key design: `ErrPublicClient` sentinel in `clients.go`; does not revoke existing tokens (access tokens verified by RSA key, not client secret). Frontend hides "Rotate Secret" button for public clients.
+
+### Token Introspection (RFC 7662) (completed 2026-05-19)
+Lets resource servers validate access tokens without parsing JWTs themselves.
+
+- `POST /oauth2/introspect` — form-encoded: `token`, `client_id`, `client_secret`. Returns `{active: true, ...claims}` or `{active: false}`.
+
+| File | Responsibility |
+|------|----------------|
+| `internal/oauth2/introspect.go` | `IntrospectHandler` — authenticates client via `authenticateClient()`, parses JWT, checks JTI revocation |
+
+Key design: client auth failures return 401 (not `active:false`) per RFC 7662 §2.1. Response includes `jti`, `iss`, `sub`, `client_id`, `scope`, `token_type`, `exp`, `iat`, `aud`. `Cache-Control: no-store` set per RFC.
+
+### Token Revocation (RFC 7009) (completed 2026-05-19)
+Lets clients explicitly invalidate tokens.
+
+- `POST /oauth2/revoke` — form-encoded: `token`, `token_type_hint`, `client_id`, `client_secret`. Always returns 200.
+
+| File | Responsibility |
+|------|----------------|
+| `internal/oauth2/revoke.go` | `RevokeHandler` — authenticates client, tries access token (JTI lookup), then refresh token (hash lookup), marks `revoked=TRUE` |
+
+Key design: always returns 200 per RFC 7009 §2.2. Public clients authenticate with `client_id` only.
+
+### Token Admin UI (completed 2026-05-19)
+Admins can list, inspect, and revoke active OAuth2 tokens from the admin portal.
+
+#### New Backend
+| File | Responsibility |
+|------|----------------|
+| `internal/oauth2/list_tokens.go` | `ListTokensHandler` — lists all non-revoked, non-expired tokens |
+| `internal/oauth2/inspect_token.go` | `InspectTokenHandler` — parses and validates a raw JWT, returns decoded claims + DB status |
+
+New endpoints (protected: `oauth2_client:read/write`):
+- `GET /api/oauth2/tokens` — list active tokens
+- `DELETE /api/oauth2/tokens/{id}` — admin-revoke a token by DB UUID (inline in `handler.go`)
+- `POST /api/oauth2/tokens/inspect` — decode + validate a raw token string
+
+#### Frontend
+| File | Change |
+|------|--------|
+| `web/src/pages/TokensPage.tsx` | New page — list table with revoke buttons; raw token inspect form showing decoded claims |
+| `web/src/App.tsx` | Added `/oauth2/tokens` protected route |
+| `web/src/components/app-nav.tsx` | Added "Tokens" nav link |
+
+### Identity Enable/Disable (completed 2026-05-19)
+Admins can enable or disable an identity from the Identity Detail page.
+
+| File | Responsibility |
+|------|----------------|
+| `internal/identity/set_enabled.go` | `SetEnabledHandler` — updates `is_enabled` flag, returns updated row |
+
+New endpoint (protected: `identity:write`):
+- `PATCH /api/identities/{id}/enabled` — body: `{ enabled: bool }`. Returns `{ id, is_enabled, updated_at }`. Logs `identity.enable` or `identity.disable` audit event.
+
+Disabled identities cannot log in — session creation checks `is_enabled`. Frontend: toggle switch on `IdentityDetailPage`.
+
+### Identity Password Reset (completed 2026-05-19)
+Admins can reset any identity's password from the Identity Detail page.
+
+| File | Responsibility |
+|------|----------------|
+| `internal/identity/reset_password.go` | `ResetPasswordHandler` — validates new password (min 8 chars), re-hashes Argon2id, updates `pw_hash` |
+
+New endpoint (protected: `identity:write`):
+- `POST /api/identities/{id}/reset-password` — body: `{ password: string }`. Returns 204. Logs `identity.password.reset` audit event.
+
+Frontend: "Reset Password" form on `IdentityDetailPage`.
+
+### Audit Log Improvements (completed 2026-05-19)
+Upgraded from a simple paginated list to a filterable view with actor email and total count for pagination.
+
+#### DB / SQL Changes
+Queries in `db/queries/audit.sql` replaced with filtered variants:
+- `ListAuditLogsFiltered` — LEFT JOINs `identities` for `actor_email`; filter params `$1::text` (resource_type), `$2::text` (action LIKE prefix), `$3::uuid` (actor_id), `$4::timestamptz` (since), `$5::timestamptz` (until)
+- `CountAuditLogsFiltered` — same filter params, returns `int64`
+- `ListDistinctAuditResourceTypes` — distinct `resource_type` values for dropdown
+
+Note: sqlc generates unnamed `$N::type` casts as `Column1`–`Column5` in the params struct.
+
+#### Backend Changes
+- `list_events.go` → `ListEventsFilter` struct; `ListEventsResult{Total int64, Rows []db.ListAuditLogsFilteredRow}`; action prefix appended with `%` for LIKE
+- `handler.go` → `GET /api/audit-logs/resource-types` endpoint added; all filter params parsed from query string (RFC3339 since/until); response is `{"total": N, "logs": [...]}` (not bare array); default page size 50
+
+#### Frontend Changes
+| File | Change |
+|------|--------|
+| `web/src/pages/AuditLogsPage.tsx` | Filter bar (resource type dropdown, action prefix input, actor UUID input, since/until date pickers), pagination controls, actor email display |
+| `web/src/api.ts` | `AuditLog` gains `actor_email: string \| null`; `listAuditLogs` returns `AuditLogsResponse{total, logs}`; added `listAuditResourceTypes()` |
+
+### Public Client Support (completed 2026-05-19)
+Clients without a client secret for native/mobile apps (RFC 8252). PKCE remains mandatory for all clients.
+
+#### DB Migration
+`013_public_client_support.sql` — `ALTER TABLE oauth2_clients ALTER COLUMN client_secret_hash DROP NOT NULL`
+
+Identification: `client_secret_hash IS NULL` → public client. No separate boolean column needed.
+
+#### Backend Changes
+| File | Change |
+|------|--------|
+| `internal/oauth2/crypto.go` | Added `authenticateClient(ctx, q, clientID, clientSecret)` helper — accepts `client_id` only for public clients |
+| `internal/oauth2/token.go` | Replaced inline client auth with `authenticateClient()` |
+| `internal/oauth2/introspect.go` | Replaced inline client auth with `authenticateClient()` |
+| `internal/oauth2/revoke.go` | Replaced inline client auth with `authenticateClient()` |
+| `internal/oauth2/clients.go` | `CreateClientCommand.IsPublic bool`; `ErrPublicClient` sentinel |
+| `internal/oauth2/handler.go` | `clientResponse.IsPublic bool`; `CreateClient` passes `is_public`; `RotateSecret` returns 422 for public clients |
+
+#### Frontend Changes
+- Create form gains public client checkbox with description.
+- Amber `public` badge in client list for public clients.
+- "Rotate Secret" button hidden for public clients.
+- `OAuthClient.is_public` and `CreateOAuthClientData.is_public` in `api.ts`.
+
+### Docker Compose + Production Binary (completed 2026-05-19)
+Production deployment via Docker Compose with a standalone embedded migration runner.
+
+#### `compose.yaml`
+Three services:
+1. **`db`** — PostgreSQL 18 with `pg_isready` health check
+2. **`migrate`** — `entrypoint: ["/app/migrate"]`; `depends_on: db: condition: service_healthy`; `restart: "no"`
+3. **`app`** — port 8080; `depends_on: migrate: condition: service_completed_successfully`; named volume `app_keys` at `/app/keys/`
+
+Named volumes: `idm_database` (Postgres data), `app_keys` (RSA signing key persists across restarts).
+
+**Important**: use `entrypoint:` in compose, NOT `command:`. The Dockerfile sets `ENTRYPOINT ["/app/minIDM"]`; `command:` is appended as args to that entrypoint, not a replacement.
+
+#### Standalone Migrate Binary (`services/api/cmd/migrate/main.go`)
+Embeds all migrations via `embed.FS` and runs `goose.Up` using the Go API. Completely independent of dev mode.
+
+```go
+// services/api/db/migrations/embed.go
+package migrations
+import "embed"
+//go:embed *.sql
+var SQL embed.FS
+```
+
+Dev mode (`task dev`) continues using Testcontainers + goose CLI via `exec.Command` — unaffected.
+
+#### Dockerfile
+Backend build stage compiles both `/app/minIDM` (server) and `/app/migrate` (migrator). Both copied to distroless final image.
+
+### Dev Proxy and AuthPage Fix (completed 2026-05-19)
+
+#### Vite Proxy (`vite.config.js`)
+Added `/oauth2` and `/.well-known` proxy rules so OAuth2 protocol endpoints route through the Vite dev server:
+```javascript
+proxy: {
+  '/api':         'http://localhost:8080',
+  '/oauth2':      'http://localhost:8080',
+  '/.well-known': 'http://localhost:8080',
+}
+```
+Required so that `GET /oauth2/authorize` redirects (which use relative URLs like `/login?next=...`) resolve on port 5173 where the SPA runs, not port 8080.
+
+#### AuthPage (`web/src/pages/AuthPage.tsx`)
+Post-login redirect uses `window.location.href = next` instead of React Router `navigate(next)`. `navigate()` is SPA-only and cannot trigger backend routes or full-page navigation.
+
+### OIDC Test Client (`~/Projects/oidc-test-client`) (completed 2026-05-19)
+Reference test application for end-to-end OIDC flow testing against minIDM.
+
+**Stack**: Node.js, Express, TypeScript (ESM/NodeNext), `express-session`
+
+Tokens stored server-side in Express session (in-memory); browser only sees the opaque `connect.sid` cookie.
+
+| Route | Purpose |
+|-------|---------|
+| `/` | Home — shows token state and user info |
+| `/login` | Initiates PKCE flow; redirects to `/oauth2/authorize` |
+| `/callback` | Exchanges auth code for tokens; stores in session |
+| `/userinfo` | Calls userinfo endpoint with Bearer token |
+| `/introspect` | Calls introspect endpoint |
+| `/refresh` | Refreshes access token; stores rotated refresh token |
+| `/revoke` | Revokes refresh token |
+| `/logout` | Clears session |
+
+**Discovery URL rewriting**: The client rewrites all endpoints from the discovery document to replace the server's internal issuer (e.g., `http://localhost:8080`) with the configured `ISSUER` (`http://localhost:5173`), routing everything through Vite's proxy so `HttpOnly` session cookies flow without CORS issues.
+
+**SSO note**: `localhost` cookies are port-agnostic. The minIDM session cookie (set at port 5173/8080 for `localhost`) is automatically sent to the test client on port 3000, enabling SSO — the second app never prompts for login if the user is already authenticated in minIDM.
+
+#### Configuration (`.env`)
+```
+ISSUER=http://localhost:5173
+CLIENT_ID=<from minIDM>
+CLIENT_SECRET=<from minIDM>   # omit for public clients
+REDIRECT_URI=http://localhost:3000/callback
+PORT=3000
+```
+
 ## Next Steps for the Next AI
-1. **Client secret rotation**: `POST /api/oauth2/clients/{id}/rotate-secret` — re-generate, re-hash, return once. Does not affect active tokens (those use JWTs verified by the key, not the secret).
-2. **Token introspection** (RFC 7662): `POST /oauth2/introspect` — lets resource servers validate an access token without parsing JWTs themselves. Useful for non-JWT-aware services.
-3. **Token revocation** (RFC 7009): `POST /oauth2/revoke` — lets clients explicitly invalidate a refresh or access token.
+1. **Self-service password reset** — email-based reset link flow (requires email delivery). Currently only admins can reset passwords via `POST /api/identities/{id}/reset-password`.
+2. **Refresh token revocation in user-facing UI** — users can see and revoke their own active sessions from a "My Account" page (currently only admins can do this for other identities).
+3. **Dynamic client registration** (RFC 7591) — allow clients to self-register rather than requiring admin creation.
+4. **Scope-based consent** — currently consent grants all client scopes; could show per-scope checkboxes and issue codes only for approved scopes.
 
 ## CQRS Pattern (for new features)
 Every new feature should follow this shape:
