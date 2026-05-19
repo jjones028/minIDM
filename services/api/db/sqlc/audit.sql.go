@@ -11,12 +11,32 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const countAuditLogs = `-- name: CountAuditLogs :one
-SELECT COUNT(*) FROM audit_logs
+const countAuditLogsFiltered = `-- name: CountAuditLogsFiltered :one
+SELECT COUNT(*) FROM audit_logs al
+WHERE
+    ($1::text = '' OR al.resource_type = $1)
+    AND ($2::text = '' OR al.action LIKE $2)
+    AND ($3::uuid IS NULL OR al.actor_id = $3)
+    AND ($4::timestamptz IS NULL OR al.created_at >= $4)
+    AND ($5::timestamptz IS NULL OR al.created_at <= $5)
 `
 
-func (q *Queries) CountAuditLogs(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countAuditLogs)
+type CountAuditLogsFilteredParams struct {
+	Column1 string             `json:"column_1"`
+	Column2 string             `json:"column_2"`
+	Column3 pgtype.UUID        `json:"column_3"`
+	Column4 pgtype.Timestamptz `json:"column_4"`
+	Column5 pgtype.Timestamptz `json:"column_5"`
+}
+
+func (q *Queries) CountAuditLogsFiltered(ctx context.Context, arg CountAuditLogsFilteredParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countAuditLogsFiltered,
+		arg.Column1,
+		arg.Column2,
+		arg.Column3,
+		arg.Column4,
+		arg.Column5,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -46,26 +66,66 @@ func (q *Queries) CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) 
 	return err
 }
 
-const listAuditLogs = `-- name: ListAuditLogs :many
-SELECT id, actor_id, action, resource_type, resource_id, details, created_at FROM audit_logs
-ORDER BY created_at DESC
-LIMIT $1 OFFSET $2
+const listAuditLogsFiltered = `-- name: ListAuditLogsFiltered :many
+SELECT
+    al.id,
+    al.actor_id,
+    al.action,
+    al.resource_type,
+    al.resource_id,
+    al.details,
+    al.created_at,
+    i.email AS actor_email
+FROM audit_logs al
+LEFT JOIN identities i ON i.id = al.actor_id
+WHERE
+    ($1::text = '' OR al.resource_type = $1)
+    AND ($2::text = '' OR al.action LIKE $2)
+    AND ($3::uuid IS NULL OR al.actor_id = $3)
+    AND ($4::timestamptz IS NULL OR al.created_at >= $4)
+    AND ($5::timestamptz IS NULL OR al.created_at <= $5)
+ORDER BY al.created_at DESC
+LIMIT $6 OFFSET $7
 `
 
-type ListAuditLogsParams struct {
-	Limit  int32 `json:"limit"`
-	Offset int32 `json:"offset"`
+type ListAuditLogsFilteredParams struct {
+	Column1 string             `json:"column_1"`
+	Column2 string             `json:"column_2"`
+	Column3 pgtype.UUID        `json:"column_3"`
+	Column4 pgtype.Timestamptz `json:"column_4"`
+	Column5 pgtype.Timestamptz `json:"column_5"`
+	Limit   int32              `json:"limit"`
+	Offset  int32              `json:"offset"`
 }
 
-func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error) {
-	rows, err := q.db.Query(ctx, listAuditLogs, arg.Limit, arg.Offset)
+type ListAuditLogsFilteredRow struct {
+	ID           pgtype.UUID        `json:"id"`
+	ActorID      pgtype.UUID        `json:"actor_id"`
+	Action       string             `json:"action"`
+	ResourceType string             `json:"resource_type"`
+	ResourceID   pgtype.Text        `json:"resource_id"`
+	Details      []byte             `json:"details"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ActorEmail   pgtype.Text        `json:"actor_email"`
+}
+
+func (q *Queries) ListAuditLogsFiltered(ctx context.Context, arg ListAuditLogsFilteredParams) ([]ListAuditLogsFilteredRow, error) {
+	rows, err := q.db.Query(ctx, listAuditLogsFiltered,
+		arg.Column1,
+		arg.Column2,
+		arg.Column3,
+		arg.Column4,
+		arg.Column5,
+		arg.Limit,
+		arg.Offset,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []AuditLog
+	var items []ListAuditLogsFilteredRow
 	for rows.Next() {
-		var i AuditLog
+		var i ListAuditLogsFilteredRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.ActorID,
@@ -74,10 +134,35 @@ func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([
 			&i.ResourceID,
 			&i.Details,
 			&i.CreatedAt,
+			&i.ActorEmail,
 		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDistinctAuditResourceTypes = `-- name: ListDistinctAuditResourceTypes :many
+SELECT DISTINCT resource_type FROM audit_logs ORDER BY resource_type
+`
+
+func (q *Queries) ListDistinctAuditResourceTypes(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, listDistinctAuditResourceTypes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var resource_type string
+		if err := rows.Scan(&resource_type); err != nil {
+			return nil, err
+		}
+		items = append(items, resource_type)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

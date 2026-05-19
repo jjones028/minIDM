@@ -204,6 +204,7 @@ export const isUnauthorized = (err: unknown) =>
 export interface AuditLog {
   id: string;
   actor_id: string | null;
+  actor_email: string | null;
   action: string;
   resource_type: string;
   resource_id: string | null;
@@ -211,5 +212,32 @@ export interface AuditLog {
   created_at: string;
 }
 
-export const listAuditLogs = (limit = 100, offset = 0) =>
-  api.get<AuditLog[]>(`/audit-logs?limit=${limit}&offset=${offset}`);
+export interface AuditLogsResponse {
+  total: number;
+  logs: AuditLog[];
+}
+
+export interface AuditLogsFilter {
+  resource_type?: string;
+  action?: string;
+  actor_id?: string;
+  since?: string;
+  until?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export const listAuditLogs = (filter: AuditLogsFilter = {}) => {
+  const params = new URLSearchParams();
+  if (filter.resource_type) params.set('resource_type', filter.resource_type);
+  if (filter.action) params.set('action', filter.action);
+  if (filter.actor_id) params.set('actor_id', filter.actor_id);
+  if (filter.since) params.set('since', filter.since);
+  if (filter.until) params.set('until', filter.until);
+  if (filter.limit !== undefined) params.set('limit', String(filter.limit));
+  if (filter.offset !== undefined) params.set('offset', String(filter.offset));
+  const qs = params.toString();
+  return api.get<AuditLogsResponse>(`/audit-logs${qs ? `?${qs}` : ''}`);
+};
+
+export const listAuditResourceTypes = () => api.get<string[]>('/audit-logs/resource-types');
