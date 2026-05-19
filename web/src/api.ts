@@ -98,6 +98,7 @@ export interface OAuthClient {
   redirect_uris: string[];
   scopes: string[];
   is_enabled: boolean;
+  is_public: boolean;
   auto_consent: boolean;
   created_at: string;
   updated_at: string;
@@ -109,6 +110,7 @@ export interface CreateOAuthClientData {
   redirect_uris: string[];
   scopes: string[];
   auto_consent?: boolean;
+  is_public?: boolean;
 }
 
 export interface UpdateOAuthClientData {

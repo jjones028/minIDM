@@ -2,12 +2,15 @@ package oauth2
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	db "minIDM/db/sqlc"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+var ErrPublicClient = errors.New("operation not supported for public clients")
 
 // ---- Create ----
 
@@ -17,6 +20,7 @@ type CreateClientCommand struct {
 	RedirectURIs []string
 	Scopes       []string
 	AutoConsent  bool
+	IsPublic     bool
 }
 
 type CreateClientResult struct {
@@ -35,13 +39,19 @@ func (h *CreateClientHandler) Handle(ctx context.Context, cmd CreateClientComman
 	if err != nil {
 		return nil, fmt.Errorf("generating client_id: %w", err)
 	}
-	secret, err := GenerateClientSecret()
-	if err != nil {
-		return nil, fmt.Errorf("generating client_secret: %w", err)
-	}
-	secretHash, err := HashClientSecret(secret)
-	if err != nil {
-		return nil, fmt.Errorf("hashing client_secret: %w", err)
+
+	var secretHash pgtype.Text
+	var plainSecret string
+	if !cmd.IsPublic {
+		plainSecret, err = GenerateClientSecret()
+		if err != nil {
+			return nil, fmt.Errorf("generating client_secret: %w", err)
+		}
+		h, err := HashClientSecret(plainSecret)
+		if err != nil {
+			return nil, fmt.Errorf("hashing client_secret: %w", err)
+		}
+		secretHash = pgtype.Text{String: h, Valid: true}
 	}
 
 	scopes := cmd.Scopes
@@ -61,7 +71,7 @@ func (h *CreateClientHandler) Handle(ctx context.Context, cmd CreateClientComman
 	if err != nil {
 		return nil, err
 	}
-	return &CreateClientResult{Client: client, ClientSecret: secret}, nil
+	return &CreateClientResult{Client: client, ClientSecret: plainSecret}, nil
 }
 
 // ---- List ----
@@ -145,6 +155,13 @@ func NewRotateSecretHandler(q *db.Queries) *RotateSecretHandler {
 }
 
 func (h *RotateSecretHandler) Handle(ctx context.Context, cmd RotateSecretCommand) (RotateSecretResult, error) {
+	client, err := h.q.GetOAuth2ClientByID(ctx, cmd.ID)
+	if err != nil {
+		return RotateSecretResult{}, err
+	}
+	if !client.ClientSecretHash.Valid {
+		return RotateSecretResult{}, ErrPublicClient
+	}
 	secret, err := GenerateClientSecret()
 	if err != nil {
 		return RotateSecretResult{}, fmt.Errorf("generating client_secret: %w", err)
@@ -155,7 +172,7 @@ func (h *RotateSecretHandler) Handle(ctx context.Context, cmd RotateSecretComman
 	}
 	if err := h.q.UpdateOAuth2ClientSecret(ctx, db.UpdateOAuth2ClientSecretParams{
 		ID:               cmd.ID,
-		ClientSecretHash: hash,
+		ClientSecretHash: pgtype.Text{String: hash, Valid: true},
 	}); err != nil {
 		return RotateSecretResult{}, err
 	}

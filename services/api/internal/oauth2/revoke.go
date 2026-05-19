@@ -35,19 +35,13 @@ func (h *RevokeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	clientSecret := r.FormValue("client_secret")
 	hint := r.FormValue("token_type_hint")
 
-	if rawToken == "" || clientID == "" || clientSecret == "" {
+	if rawToken == "" || clientID == "" {
 		http.Error(w, "invalid_request", http.StatusBadRequest)
 		return
 	}
 
 	// Authenticate the requesting client — 401 on failure.
-	client, err := h.q.GetOAuth2ClientByClientID(r.Context(), clientID)
-	if err != nil || !client.IsEnabled {
-		http.Error(w, "invalid_client", http.StatusUnauthorized)
-		return
-	}
-	ok, err := VerifyClientSecret(clientSecret, client.ClientSecretHash)
-	if err != nil || !ok {
+	if _, errCode := authenticateClient(r.Context(), h.q, clientID, clientSecret); errCode != "" {
 		http.Error(w, "invalid_client", http.StatusUnauthorized)
 		return
 	}

@@ -1,12 +1,15 @@
 package oauth2
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
 	"strings"
+
+	db "minIDM/db/sqlc"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -96,4 +99,24 @@ func GenerateAuthCode() (string, error) {
 // GenerateRefreshToken returns a random refresh token.
 func GenerateRefreshToken() (string, error) {
 	return generateRandomBase64(32)
+}
+
+// authenticateClient validates client_id and, for confidential clients, client_secret.
+// Public clients (NULL secret hash) require only client_id.
+// Returns the client and an empty error string on success, or ("", "invalid_client") on failure.
+func authenticateClient(ctx context.Context, q *db.Queries, clientID, clientSecret string) (db.Oauth2Client, string) {
+	client, err := q.GetOAuth2ClientByClientID(ctx, clientID)
+	if err != nil || !client.IsEnabled {
+		return db.Oauth2Client{}, "invalid_client"
+	}
+	if client.ClientSecretHash.Valid {
+		if clientSecret == "" {
+			return db.Oauth2Client{}, "invalid_client"
+		}
+		ok, err := VerifyClientSecret(clientSecret, client.ClientSecretHash.String)
+		if err != nil || !ok {
+			return db.Oauth2Client{}, "invalid_client"
+		}
+	}
+	return client, ""
 }

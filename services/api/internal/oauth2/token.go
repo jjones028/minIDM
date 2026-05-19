@@ -63,24 +63,14 @@ func (h *TokenHandler) handleAuthorizationCode(w http.ResponseWriter, r *http.Re
 	clientSecret := r.FormValue("client_secret")
 	codeVerifier := r.FormValue("code_verifier")
 
-	if code == "" || redirectURI == "" || clientID == "" || clientSecret == "" || codeVerifier == "" {
+	if code == "" || redirectURI == "" || clientID == "" || codeVerifier == "" {
 		tokenError(w, "invalid_request", "missing required parameters", http.StatusBadRequest)
 		return
 	}
 
-	// Validate client
-	client, err := h.q.GetOAuth2ClientByClientID(r.Context(), clientID)
-	if err != nil {
-		tokenError(w, "invalid_client", "unknown client", http.StatusUnauthorized)
-		return
-	}
-	ok, err := VerifyClientSecret(clientSecret, client.ClientSecretHash)
-	if err != nil || !ok {
-		tokenError(w, "invalid_client", "invalid client_secret", http.StatusUnauthorized)
-		return
-	}
-	if !client.IsEnabled {
-		tokenError(w, "invalid_client", "client is disabled", http.StatusUnauthorized)
+	client, errCode := authenticateClient(r.Context(), h.q, clientID, clientSecret)
+	if errCode != "" {
+		tokenError(w, errCode, "client authentication failed", http.StatusUnauthorized)
 		return
 	}
 
@@ -128,20 +118,14 @@ func (h *TokenHandler) handleRefreshToken(w http.ResponseWriter, r *http.Request
 	clientID := r.FormValue("client_id")
 	clientSecret := r.FormValue("client_secret")
 
-	if refreshToken == "" || clientID == "" || clientSecret == "" {
+	if refreshToken == "" || clientID == "" {
 		tokenError(w, "invalid_request", "missing required parameters", http.StatusBadRequest)
 		return
 	}
 
-	// Validate client
-	client, err := h.q.GetOAuth2ClientByClientID(r.Context(), clientID)
-	if err != nil {
-		tokenError(w, "invalid_client", "unknown client", http.StatusUnauthorized)
-		return
-	}
-	ok, err := VerifyClientSecret(clientSecret, client.ClientSecretHash)
-	if err != nil || !ok {
-		tokenError(w, "invalid_client", "invalid client_secret", http.StatusUnauthorized)
+	client, errCode := authenticateClient(r.Context(), h.q, clientID, clientSecret)
+	if errCode != "" {
+		tokenError(w, errCode, "client authentication failed", http.StatusUnauthorized)
 		return
 	}
 
