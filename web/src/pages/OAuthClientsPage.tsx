@@ -30,6 +30,7 @@ export default function OAuthClientsPage() {
   const [newDescription, setNewDescription] = useState('');
   const [newRedirectURIs, setNewRedirectURIs] = useState('');
   const [newScopes, setNewScopes] = useState<string[]>(['openid', 'profile', 'email']);
+  const [newIsPublic, setNewIsPublic] = useState(false);
 
   // Edit state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -81,12 +82,16 @@ export default function OAuthClientsPage() {
         description: newDescription.trim() || undefined,
         redirect_uris: redirectUris,
         scopes: newScopes,
+        is_public: newIsPublic,
       });
-      setRevealedSecret({ clientId: data.client.client_id, secret: data.client_secret, rotated: false });
+      if (!newIsPublic) {
+        setRevealedSecret({ clientId: data.client.client_id, secret: data.client_secret, rotated: false });
+      }
       setNewName('');
       setNewDescription('');
       setNewRedirectURIs('');
       setNewScopes(['openid', 'profile', 'email']);
+      setNewIsPublic(false);
       fetchClients();
     } catch (err) {
       const e = err as AxiosError<string>;
@@ -258,6 +263,24 @@ export default function OAuthClientsPage() {
                   ))}
                 </div>
               </div>
+              <div className="grid gap-2">
+                <label className="text-sm font-medium leading-none">Client type</label>
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={newIsPublic}
+                    onChange={e => setNewIsPublic(e.target.checked)}
+                  />
+                  <span>
+                    <span className="text-sm font-medium">Public client</span>
+                    <span className="block text-xs text-muted-foreground">
+                      No client secret — for mobile apps and native apps that cannot securely store a secret.
+                      PKCE is required and enforced by the server.
+                    </span>
+                  </span>
+                </label>
+              </div>
               <Button type="submit" className="w-full md:w-auto">Register Client</Button>
             </form>
           </CardContent>
@@ -397,6 +420,11 @@ export default function OAuthClientsPage() {
                             }`}>
                               {client.is_enabled ? 'enabled' : 'disabled'}
                             </span>
+                            {client.is_public && (
+                              <span className="text-xs px-1.5 py-0.5 rounded-sm font-medium w-fit bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                                public
+                              </span>
+                            )}
                             {client.auto_consent && (
                               <span className="text-xs px-1.5 py-0.5 rounded-sm font-medium w-fit bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
                                 auto-consent
@@ -409,13 +437,15 @@ export default function OAuthClientsPage() {
                             <Button variant="ghost" size="sm" onClick={() => startEdit(client)}>
                               Edit
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleRotate(client)}
-                            >
-                              Rotate Secret
-                            </Button>
+                            {!client.is_public && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleRotate(client)}
+                              >
+                                Rotate Secret
+                              </Button>
+                            )}
                             <Button
                               variant="ghost"
                               size="sm"

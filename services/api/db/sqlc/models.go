@@ -58,7 +58,7 @@ type Oauth2AuthorizationCode struct {
 type Oauth2Client struct {
 	ID               pgtype.UUID        `json:"id"`
 	ClientID         string             `json:"client_id"`
-	ClientSecretHash string             `json:"client_secret_hash"`
+	ClientSecretHash pgtype.Text        `json:"client_secret_hash"`
 	Name             string             `json:"name"`
 	Description      pgtype.Text        `json:"description"`
 	RedirectUris     []string           `json:"redirect_uris"`

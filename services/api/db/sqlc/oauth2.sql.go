@@ -67,7 +67,7 @@ RETURNING id, client_id, client_secret_hash, name, description, redirect_uris, s
 
 type CreateOAuth2ClientParams struct {
 	ClientID         string      `json:"client_id"`
-	ClientSecretHash string      `json:"client_secret_hash"`
+	ClientSecretHash pgtype.Text `json:"client_secret_hash"`
 	Name             string      `json:"name"`
 	Description      pgtype.Text `json:"description"`
 	RedirectUris     []string    `json:"redirect_uris"`
@@ -472,7 +472,7 @@ UPDATE oauth2_clients SET client_secret_hash = $2, updated_at = NOW() WHERE id =
 
 type UpdateOAuth2ClientSecretParams struct {
 	ID               pgtype.UUID `json:"id"`
-	ClientSecretHash string      `json:"client_secret_hash"`
+	ClientSecretHash pgtype.Text `json:"client_secret_hash"`
 }
 
 func (q *Queries) UpdateOAuth2ClientSecret(ctx context.Context, arg UpdateOAuth2ClientSecretParams) error {

@@ -23,6 +23,7 @@ type clientResponse struct {
 	RedirectURIs []string           `json:"redirect_uris"`
 	Scopes       []string           `json:"scopes"`
 	IsEnabled    bool               `json:"is_enabled"`
+	IsPublic     bool               `json:"is_public"`
 	AutoConsent  bool               `json:"auto_consent"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
@@ -37,6 +38,7 @@ func toClientResponse(c db.Oauth2Client) clientResponse {
 		RedirectURIs: c.RedirectUris,
 		Scopes:       c.Scopes,
 		IsEnabled:    c.IsEnabled,
+		IsPublic:     !c.ClientSecretHash.Valid,
 		AutoConsent:  c.AutoConsent,
 		CreatedAt:    c.CreatedAt,
 		UpdatedAt:    c.UpdatedAt,
@@ -154,6 +156,7 @@ func (a *API) CreateClient(w http.ResponseWriter, r *http.Request) {
 		RedirectURIs []string `json:"redirect_uris"`
 		Scopes       []string `json:"scopes"`
 		AutoConsent  bool     `json:"auto_consent"`
+		IsPublic     bool     `json:"is_public"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid_request", http.StatusBadRequest)
@@ -174,6 +177,7 @@ func (a *API) CreateClient(w http.ResponseWriter, r *http.Request) {
 		RedirectURIs: req.RedirectURIs,
 		Scopes:       req.Scopes,
 		AutoConsent:  req.AutoConsent,
+		IsPublic:     req.IsPublic,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -278,6 +282,10 @@ func (a *API) RotateSecret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := a.rotateSecret.Handle(r.Context(), RotateSecretCommand{ID: id})
+	if errors.Is(err, ErrPublicClient) {
+		http.Error(w, "public clients do not have a secret", http.StatusUnprocessableEntity)
+		return
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
