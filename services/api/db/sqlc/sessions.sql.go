@@ -53,6 +53,15 @@ func (q *Queries) DeleteSession(ctx context.Context, token string) error {
 	return err
 }
 
+const deleteSessionsByIdentityID = `-- name: DeleteSessionsByIdentityID :exec
+DELETE FROM sessions WHERE identity_id = $1
+`
+
+func (q *Queries) DeleteSessionsByIdentityID(ctx context.Context, identityID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteSessionsByIdentityID, identityID)
+	return err
+}
+
 const getSessionByToken = `-- name: GetSessionByToken :one
 SELECT token, identity_id, expires_at, created_at FROM sessions
 WHERE token = $1 AND expires_at > NOW()

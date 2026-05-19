@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import {
   getIdentity, getIdentityRoles, getIdentitySessions, revokeIdentitySession,
+  resetIdentityPassword,
   isUnauthorized, type Identity, type Role, type IdentitySession,
 } from '@/api';
 import { useAuth } from '@/context/auth';
 import { Button, buttonVariants } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
-  Card, CardContent, CardHeader, CardTitle,
+  Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/components/ui/card';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -29,6 +31,11 @@ export default function IdentityDetailPage() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [sessions, setSessions] = useState<IdentitySession[]>([]);
   const [revokingHandle, setRevokingHandle] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetSuccess, setResetSuccess] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +67,38 @@ export default function IdentityDetailPage() {
       }
     } finally {
       setRevokingHandle(null);
+    }
+  }
+
+  async function handleResetPassword(e: React.FormEvent) {
+    e.preventDefault();
+    setResetError(null);
+    setResetSuccess(false);
+    if (newPassword.length < 8) {
+      setResetError('Password must be at least 8 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setResetError('Passwords do not match.');
+      return;
+    }
+    setResetting(true);
+    try {
+      await resetIdentityPassword(id!, newPassword);
+      setResetSuccess(true);
+      setNewPassword('');
+      setConfirmPassword('');
+      // All sessions were invalidated server-side — clear the local list.
+      setSessions([]);
+    } catch (err) {
+      if (isUnauthorized(err)) {
+        setAuthenticated(false);
+        navigate('/login');
+      } else {
+        setResetError('Failed to reset password. Check permissions and try again.');
+      }
+    } finally {
+      setResetting(false);
     }
   }
 
@@ -187,6 +226,50 @@ export default function IdentityDetailPage() {
                 </TableBody>
               </Table>
             )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Reset Password</CardTitle>
+            <CardDescription>
+              Set a new password for this identity. All active sessions will be
+              invalidated immediately and the user will need to sign in again.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleResetPassword} className="space-y-3 max-w-sm">
+              <div className="grid gap-1.5">
+                <label className="text-sm font-medium leading-none">New Password</label>
+                <Input
+                  type="password"
+                  value={newPassword}
+                  onChange={e => { setNewPassword(e.target.value); setResetSuccess(false); setResetError(null); }}
+                  placeholder="Min. 8 characters"
+                  autoComplete="new-password"
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <label className="text-sm font-medium leading-none">Confirm Password</label>
+                <Input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={e => { setConfirmPassword(e.target.value); setResetSuccess(false); setResetError(null); }}
+                  placeholder="Re-enter password"
+                  autoComplete="new-password"
+                />
+              </div>
+              {resetError && (
+                <p className="text-sm text-destructive">{resetError}</p>
+              )}
+              {resetSuccess && (
+                <p className="text-sm text-green-600 dark:text-green-400">
+                  Password reset. All sessions have been invalidated.
+                </p>
+              )}
+              <Button type="submit" disabled={resetting || !newPassword || !confirmPassword}>
+                {resetting ? 'Resetting…' : 'Reset Password'}
+              </Button>
+            </form>
           </CardContent>
         </Card>
       </div>

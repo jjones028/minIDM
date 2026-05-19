@@ -268,6 +268,27 @@ func (q *Queries) GetOAuth2TokenByJTI(ctx context.Context, jti string) (Oauth2To
 	return i, err
 }
 
+const getOAuth2TokenByJTIAny = `-- name: GetOAuth2TokenByJTIAny :one
+SELECT id, client_id, identity_id, jti, refresh_token_hash, scopes, expires_at, created_at, revoked FROM oauth2_tokens WHERE jti = $1 LIMIT 1
+`
+
+func (q *Queries) GetOAuth2TokenByJTIAny(ctx context.Context, jti string) (Oauth2Token, error) {
+	row := q.db.QueryRow(ctx, getOAuth2TokenByJTIAny, jti)
+	var i Oauth2Token
+	err := row.Scan(
+		&i.ID,
+		&i.ClientID,
+		&i.IdentityID,
+		&i.Jti,
+		&i.RefreshTokenHash,
+		&i.Scopes,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.Revoked,
+	)
+	return i, err
+}
+
 const getOAuth2TokenByRefreshHash = `-- name: GetOAuth2TokenByRefreshHash :one
 SELECT id, client_id, identity_id, jti, refresh_token_hash, scopes, expires_at, created_at, revoked FROM oauth2_tokens
 WHERE refresh_token_hash = $1 AND revoked = FALSE AND expires_at > NOW()
@@ -289,6 +310,62 @@ func (q *Queries) GetOAuth2TokenByRefreshHash(ctx context.Context, refreshTokenH
 		&i.Revoked,
 	)
 	return i, err
+}
+
+const listActiveOAuth2Tokens = `-- name: ListActiveOAuth2Tokens :many
+SELECT
+    t.id,
+    t.client_id,
+    t.identity_id,
+    t.jti,
+    t.scopes,
+    t.expires_at,
+    t.created_at,
+    i.email AS identity_email
+FROM oauth2_tokens t
+JOIN identities i ON i.id = t.identity_id
+WHERE t.revoked = FALSE AND t.expires_at > NOW()
+ORDER BY t.created_at DESC
+`
+
+type ListActiveOAuth2TokensRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	ClientID      string             `json:"client_id"`
+	IdentityID    pgtype.UUID        `json:"identity_id"`
+	Jti           string             `json:"jti"`
+	Scopes        []string           `json:"scopes"`
+	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	IdentityEmail string             `json:"identity_email"`
+}
+
+func (q *Queries) ListActiveOAuth2Tokens(ctx context.Context) ([]ListActiveOAuth2TokensRow, error) {
+	rows, err := q.db.Query(ctx, listActiveOAuth2Tokens)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListActiveOAuth2TokensRow
+	for rows.Next() {
+		var i ListActiveOAuth2TokensRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ClientID,
+			&i.IdentityID,
+			&i.Jti,
+			&i.Scopes,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.IdentityEmail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listOAuth2Clients = `-- name: ListOAuth2Clients :many
@@ -387,4 +464,18 @@ func (q *Queries) UpdateOAuth2Client(ctx context.Context, arg UpdateOAuth2Client
 		&i.AutoConsent,
 	)
 	return i, err
+}
+
+const updateOAuth2ClientSecret = `-- name: UpdateOAuth2ClientSecret :exec
+UPDATE oauth2_clients SET client_secret_hash = $2, updated_at = NOW() WHERE id = $1
+`
+
+type UpdateOAuth2ClientSecretParams struct {
+	ID               pgtype.UUID `json:"id"`
+	ClientSecretHash string      `json:"client_secret_hash"`
+}
+
+func (q *Queries) UpdateOAuth2ClientSecret(ctx context.Context, arg UpdateOAuth2ClientSecretParams) error {
+	_, err := q.db.Exec(ctx, updateOAuth2ClientSecret, arg.ID, arg.ClientSecretHash)
+	return err
 }

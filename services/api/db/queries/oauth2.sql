@@ -25,6 +25,9 @@ RETURNING *;
 -- name: DeleteOAuth2Client :exec
 DELETE FROM oauth2_clients WHERE id = $1;
 
+-- name: UpdateOAuth2ClientSecret :exec
+UPDATE oauth2_clients SET client_secret_hash = $2, updated_at = NOW() WHERE id = $1;
+
 -- name: CreateAuthorizationCode :one
 INSERT INTO oauth2_authorization_codes
     (code, client_id, identity_id, redirect_uri, scopes, code_challenge, code_challenge_method, expires_at, nonce)
@@ -56,3 +59,21 @@ LIMIT 1;
 
 -- name: RevokeOAuth2Token :exec
 UPDATE oauth2_tokens SET revoked = TRUE WHERE id = $1;
+
+-- name: GetOAuth2TokenByJTIAny :one
+SELECT * FROM oauth2_tokens WHERE jti = $1 LIMIT 1;
+
+-- name: ListActiveOAuth2Tokens :many
+SELECT
+    t.id,
+    t.client_id,
+    t.identity_id,
+    t.jti,
+    t.scopes,
+    t.expires_at,
+    t.created_at,
+    i.email AS identity_email
+FROM oauth2_tokens t
+JOIN identities i ON i.id = t.identity_id
+WHERE t.revoked = FALSE AND t.expires_at > NOW()
+ORDER BY t.created_at DESC;

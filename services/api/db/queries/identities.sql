@@ -20,3 +20,6 @@ SELECT COUNT(*) FROM identities;
 
 -- name: GetIdentityByID :one
 SELECT * FROM identities WHERE id = $1 LIMIT 1;
+
+-- name: UpdateIdentityPassword :exec
+UPDATE identities SET pw_hash = $2, updated_at = NOW() WHERE id = $1;

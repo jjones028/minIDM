@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   listOAuthClients, createOAuthClient, updateOAuthClient, deleteOAuthClient,
+  rotateOAuthClientSecret,
   isUnauthorized, type OAuthClient, type UpdateOAuthClientData,
 } from '@/api';
 import { useAuth } from '@/context/auth';
@@ -39,8 +40,8 @@ export default function OAuthClientsPage() {
   const [editEnabled, setEditEnabled] = useState(true);
   const [editAutoConsent, setEditAutoConsent] = useState(false);
 
-  // Secret reveal modal
-  const [revealedSecret, setRevealedSecret] = useState<{ clientId: string; secret: string } | null>(null);
+  // Secret reveal modal — used for both new client creation and rotation
+  const [revealedSecret, setRevealedSecret] = useState<{ clientId: string; secret: string; rotated?: boolean } | null>(null);
 
   const fetchClients = useCallback(() => {
     let cancelled = false;
@@ -81,7 +82,7 @@ export default function OAuthClientsPage() {
         redirect_uris: redirectUris,
         scopes: newScopes,
       });
-      setRevealedSecret({ clientId: data.client.client_id, secret: data.client_secret });
+      setRevealedSecret({ clientId: data.client.client_id, secret: data.client_secret, rotated: false });
       setNewName('');
       setNewDescription('');
       setNewRedirectURIs('');
@@ -138,6 +139,17 @@ export default function OAuthClientsPage() {
     }
   };
 
+  const handleRotate = async (client: OAuthClient) => {
+    if (!confirm(`Rotate the client secret for "${client.name}"?\n\nThe current secret will stop working immediately. Copy the new secret before closing — it is shown only once.`)) return;
+    try {
+      const { data } = await rotateOAuthClientSecret(client.id);
+      setRevealedSecret({ clientId: client.client_id, secret: data.client_secret, rotated: true });
+    } catch (err) {
+      const e = err as AxiosError<string>;
+      alert('Failed: ' + (e.response?.data?.trim() ?? e.message));
+    }
+  };
+
   const toggleScope = (scope: string, checked: boolean, current: string[], setFn: (s: string[]) => void) => {
     setFn(checked ? [...current, scope] : current.filter(s => s !== scope));
   };
@@ -158,9 +170,13 @@ export default function OAuthClientsPage() {
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <Card className="w-full max-w-lg">
               <CardHeader>
-                <CardTitle>Client Secret — Save This Now</CardTitle>
+                <CardTitle>
+                  {revealedSecret.rotated ? 'New Client Secret — Save This Now' : 'Client Secret — Save This Now'}
+                </CardTitle>
                 <CardDescription>
-                  This is shown only once. Copy and store it securely before closing.
+                  {revealedSecret.rotated
+                    ? 'The previous secret is now invalid. This new secret is shown only once — copy and store it securely before closing.'
+                    : 'This is shown only once. Copy and store it securely before closing.'}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -392,6 +408,13 @@ export default function OAuthClientsPage() {
                           <div className="flex gap-1">
                             <Button variant="ghost" size="sm" onClick={() => startEdit(client)}>
                               Edit
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleRotate(client)}
+                            >
+                              Rotate Secret
                             </Button>
                             <Button
                               variant="ghost"

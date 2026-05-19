@@ -45,15 +45,21 @@ func toClientResponse(c db.Oauth2Client) clientResponse {
 
 // API holds all OAuth2 handlers.
 type API struct {
+	q            *db.Queries
 	createClient *CreateClientHandler
 	listClients  *ListClientsHandler
 	getClient    *GetClientHandler
 	updateClient *UpdateClientHandler
-	deleteClient *DeleteClientHandler
+	deleteClient  *DeleteClientHandler
+	rotateSecret  *RotateSecretHandler
+	listTokens    *ListTokensHandler
+	inspectToken  *InspectTokenHandler
 	authorize    *AuthorizeHandler
 	consent      *ConsentHandler
 	clientInfo   *ClientInfoHandler
 	token        *TokenHandler
+	introspect   *IntrospectHandler
+	revoke       *RevokeHandler
 	userinfo     *UserinfoHandler
 	discovery    *DiscoveryHandler
 	jwks         *JWKSHandler
@@ -77,15 +83,21 @@ func Register(
 	authenticate func(http.Handler) http.Handler,
 ) {
 	api := &API{
+		q:            q,
 		createClient: NewCreateClientHandler(q),
 		listClients:  NewListClientsHandler(q),
 		getClient:    NewGetClientHandler(q),
 		updateClient: NewUpdateClientHandler(q),
-		deleteClient: NewDeleteClientHandler(q),
-		authorize:    NewAuthorizeHandler(q, key),
+		deleteClient:  NewDeleteClientHandler(q),
+		rotateSecret:  NewRotateSecretHandler(q),
+		listTokens:    NewListTokensHandler(q),
+		inspectToken:  NewInspectTokenHandler(q, key, issuer),
+		authorize:     NewAuthorizeHandler(q, key),
 		consent:      NewConsentHandler(q, key),
 		clientInfo:   NewClientInfoHandler(q),
 		token:        NewTokenHandler(q, key, issuer),
+		introspect:   NewIntrospectHandler(q, key, issuer),
+		revoke:       NewRevokeHandler(q, key, issuer),
 		userinfo:     NewUserinfoHandler(q, key, issuer),
 		discovery:    NewDiscoveryHandler(issuer),
 		jwks:         NewJWKSHandler(key),
@@ -99,6 +111,8 @@ func Register(
 	// OAuth2 protocol endpoints (public — own auth logic)
 	mux.Handle("GET /oauth2/authorize", api.authorize)
 	mux.Handle("POST /oauth2/token", http.HandlerFunc(api.token.ServeHTTP))
+	mux.Handle("POST /oauth2/introspect", api.introspect)
+	mux.Handle("POST /oauth2/revoke", api.revoke)
 	mux.Handle("GET /oauth2/userinfo", api.userinfo)
 
 	// Consent: public client info (for consent page display) + session-gated approval
@@ -111,6 +125,10 @@ func Register(
 	mux.Handle("GET /api/oauth2/clients/{id}", protectClientRead(http.HandlerFunc(api.GetClient)))
 	mux.Handle("PATCH /api/oauth2/clients/{id}", protectClientWrite(http.HandlerFunc(api.UpdateClient)))
 	mux.Handle("DELETE /api/oauth2/clients/{id}", protectClientWrite(http.HandlerFunc(api.DeleteClient)))
+	mux.Handle("POST /api/oauth2/clients/{id}/rotate-secret", protectClientWrite(http.HandlerFunc(api.RotateSecret)))
+	mux.Handle("GET /api/oauth2/tokens", protectClientRead(http.HandlerFunc(api.ListTokens)))
+	mux.Handle("DELETE /api/oauth2/tokens/{id}", protectClientWrite(http.HandlerFunc(api.RevokeToken)))
+	mux.Handle("POST /api/oauth2/tokens/inspect", protectClientRead(http.HandlerFunc(api.InspectToken)))
 }
 
 // --- HTTP handlers ---
@@ -250,6 +268,55 @@ func (a *API) DeleteClient(w http.ResponseWriter, r *http.Request) {
 	}
 	actorID, _ := rbac.IdentityFromContext(r.Context())
 	a.auditor.Log(r.Context(), actorID, "oauth2_client.delete", "oauth2_client", audit.UUIDStr(id), nil)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *API) RotateSecret(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUID(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "invalid_id", http.StatusBadRequest)
+		return
+	}
+	result, err := a.rotateSecret.Handle(r.Context(), RotateSecretCommand{ID: id})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	actorID, _ := rbac.IdentityFromContext(r.Context())
+	a.auditor.Log(r.Context(), actorID, "oauth2_client.rotate_secret", "oauth2_client", audit.UUIDStr(id), nil)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"client_secret": result.ClientSecret})
+}
+
+func (a *API) InspectToken(w http.ResponseWriter, r *http.Request) {
+	a.inspectToken.ServeHTTP(w, r)
+}
+
+func (a *API) ListTokens(w http.ResponseWriter, r *http.Request) {
+	tokens, err := a.listTokens.Handle(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if tokens == nil {
+		tokens = []db.ListActiveOAuth2TokensRow{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(tokens)
+}
+
+func (a *API) RevokeToken(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUID(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "invalid_id", http.StatusBadRequest)
+		return
+	}
+	if err := a.q.RevokeOAuth2Token(r.Context(), id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	actorID, _ := rbac.IdentityFromContext(r.Context())
+	a.auditor.Log(r.Context(), actorID, "oauth2_token.revoke", "oauth2_token", audit.UUIDStr(id), nil)
 	w.WriteHeader(http.StatusNoContent)
 }
 
