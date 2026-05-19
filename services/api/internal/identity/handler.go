@@ -21,6 +21,7 @@ func Register(mux *http.ServeMux, queries *db.Queries, protectRead, protectWrite
 		listIdentitySessions:  NewListIdentitySessionsHandler(queries),
 		revokeIdentitySession: NewRevokeIdentitySessionHandler(queries),
 		resetPassword:         NewResetPasswordHandler(queries),
+		setEnabled:            NewSetEnabledHandler(queries),
 		auditor:               auditor,
 	}
 	api.RegisterRoutes(mux, protectRead, protectWrite)
@@ -33,6 +34,7 @@ type API struct {
 	listIdentitySessions  *ListIdentitySessionsHandler
 	revokeIdentitySession *RevokeIdentitySessionHandler
 	resetPassword         *ResetPasswordHandler
+	setEnabled            *SetEnabledHandler
 	auditor               *audit.Auditor
 }
 
@@ -43,6 +45,7 @@ func (a *API) RegisterRoutes(mux *http.ServeMux, protectRead, protectWrite func(
 	mux.Handle("GET /api/identities/{id}/sessions", protectRead(http.HandlerFunc(a.ListSessions)))
 	mux.Handle("DELETE /api/identities/{id}/sessions/{handle}", protectWrite(http.HandlerFunc(a.RevokeSession)))
 	mux.Handle("POST /api/identities/{id}/reset-password", protectWrite(http.HandlerFunc(a.ResetPassword)))
+	mux.Handle("PATCH /api/identities/{id}/enabled", protectWrite(http.HandlerFunc(a.SetEnabled)))
 }
 
 func (a *API) List(w http.ResponseWriter, r *http.Request) {
@@ -200,6 +203,41 @@ func (a *API) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	actorID, _ := rbac.IdentityFromContext(r.Context())
 	a.auditor.Log(r.Context(), actorID, "identity.password.reset", "identity", audit.UUIDStr(id), nil)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *API) SetEnabled(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUID(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "invalid_id", http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid_request", http.StatusBadRequest)
+		return
+	}
+	row, err := a.setEnabled.Handle(r.Context(), SetEnabledCommand{
+		IdentityID: id,
+		Enabled:    req.Enabled,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	actorID, _ := rbac.IdentityFromContext(r.Context())
+	action := "identity.disable"
+	if req.Enabled {
+		action = "identity.enable"
+	}
+	a.auditor.Log(r.Context(), actorID, action, "identity", audit.UUIDStr(id), nil)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"id":         row.ID,
+		"is_enabled": row.IsEnabled,
+		"updated_at": row.UpdatedAt,
+	})
 }
 
 func parseUUID(s string) (pgtype.UUID, error) {

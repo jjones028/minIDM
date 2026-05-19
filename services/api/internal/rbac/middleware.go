@@ -33,6 +33,11 @@ func Authenticate(queries *db.Queries) func(http.Handler) http.Handler {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
+			ident, err := queries.GetIdentityByID(r.Context(), session.IdentityID)
+			if err != nil || !ident.IsEnabled {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
 			ctx := context.WithValue(r.Context(), identityKey, session.IdentityID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

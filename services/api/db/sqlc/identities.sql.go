@@ -141,6 +141,39 @@ func (q *Queries) ListIdentities(ctx context.Context) ([]Identity, error) {
 	return items, nil
 }
 
+const updateIdentityEnabled = `-- name: UpdateIdentityEnabled :one
+UPDATE identities SET is_enabled = $2, updated_at = NOW() WHERE id = $1
+RETURNING id, subject_id, email, is_enabled, created_at, updated_at
+`
+
+type UpdateIdentityEnabledParams struct {
+	ID        pgtype.UUID `json:"id"`
+	IsEnabled bool        `json:"is_enabled"`
+}
+
+type UpdateIdentityEnabledRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	SubjectID string             `json:"subject_id"`
+	Email     string             `json:"email"`
+	IsEnabled bool               `json:"is_enabled"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) UpdateIdentityEnabled(ctx context.Context, arg UpdateIdentityEnabledParams) (UpdateIdentityEnabledRow, error) {
+	row := q.db.QueryRow(ctx, updateIdentityEnabled, arg.ID, arg.IsEnabled)
+	var i UpdateIdentityEnabledRow
+	err := row.Scan(
+		&i.ID,
+		&i.SubjectID,
+		&i.Email,
+		&i.IsEnabled,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateIdentityPassword = `-- name: UpdateIdentityPassword :exec
 UPDATE identities SET pw_hash = $2, updated_at = NOW() WHERE id = $1
 `

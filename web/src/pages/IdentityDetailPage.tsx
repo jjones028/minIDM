@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import {
   getIdentity, getIdentityRoles, getIdentitySessions, revokeIdentitySession,
-  resetIdentityPassword,
+  resetIdentityPassword, setIdentityEnabled,
   isUnauthorized, type Identity, type Role, type IdentitySession,
 } from '@/api';
 import { useAuth } from '@/context/auth';
@@ -31,6 +31,7 @@ export default function IdentityDetailPage() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [sessions, setSessions] = useState<IdentitySession[]>([]);
   const [revokingHandle, setRevokingHandle] = useState<string | null>(null);
+  const [togglingEnabled, setTogglingEnabled] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [resetError, setResetError] = useState<string | null>(null);
@@ -102,6 +103,23 @@ export default function IdentityDetailPage() {
     }
   }
 
+  async function handleToggleEnabled() {
+    if (!identity) return;
+    const next = !identity.is_enabled;
+    const verb = next ? 'enable' : 'disable';
+    if (!confirm(`${verb.charAt(0).toUpperCase() + verb.slice(1)} ${identity.email}?`)) return;
+    setTogglingEnabled(true);
+    try {
+      const { data } = await setIdentityEnabled(id!, next);
+      setIdentity(prev => prev ? { ...prev, is_enabled: data.is_enabled } : prev);
+    } catch (err) {
+      if (isUnauthorized(err)) { setAuthenticated(false); navigate('/login'); }
+      else alert(`Failed to ${verb} identity.`);
+    } finally {
+      setTogglingEnabled(false);
+    }
+  }
+
   if (!identity) return null;
 
   return (
@@ -116,13 +134,18 @@ export default function IdentityDetailPage() {
           </button>
           <div className="flex items-center gap-3">
             <h1 className="text-4xl font-extrabold tracking-tight font-heading">{identity.email}</h1>
-            <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${
-              identity.is_enabled
-                ? 'bg-primary/10 text-primary'
-                : 'bg-muted text-muted-foreground'
-            }`}>
-              {identity.is_enabled ? 'Enabled' : 'Disabled'}
-            </span>
+            <button
+              onClick={handleToggleEnabled}
+              disabled={togglingEnabled}
+              title={identity.is_enabled ? 'Click to disable' : 'Click to enable'}
+              className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium transition-opacity hover:opacity-70 disabled:opacity-50 cursor-pointer ${
+                identity.is_enabled
+                  ? 'bg-primary/10 text-primary'
+                  : 'bg-muted text-muted-foreground'
+              }`}
+            >
+              {togglingEnabled ? '…' : identity.is_enabled ? 'Enabled' : 'Disabled'}
+            </button>
           </div>
         </header>
 
