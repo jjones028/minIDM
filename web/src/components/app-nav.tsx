@@ -41,6 +41,18 @@ export function AppNav() {
         OAuth2 Clients
       </NavLink>
       <NavLink
+        to="/oauth2/tokens"
+        className={({ isActive }) =>
+          `px-3 py-1.5 rounded-md transition-colors ${
+            isActive
+              ? 'bg-muted text-foreground font-medium'
+              : 'text-muted-foreground hover:text-foreground'
+          }`
+        }
+      >
+        Tokens
+      </NavLink>
+      <NavLink
         to="/audit-logs"
         className={({ isActive }) =>
           `px-3 py-1.5 rounded-md transition-colors ${

@@ -78,6 +78,8 @@ export const getIdentity = (id: string) => api.get<Identity>(`/identities/${id}`
 export const getIdentitySessions = (id: string) => api.get<IdentitySession[]>(`/identities/${id}/sessions`);
 export const revokeIdentitySession = (identityId: string, handle: string) =>
   api.delete(`/identities/${identityId}/sessions/${handle}`);
+export const resetIdentityPassword = (identityId: string, password: string) =>
+  api.post(`/identities/${identityId}/reset-password`, { password });
 export const getIdentityRoles = (id: string) => api.get<Role[]>(`/identities/${id}/roles`);
 export const assignRole = (identityId: string, roleId: string) =>
   api.post(`/identities/${identityId}/roles`, { role_id: roleId });
@@ -143,6 +145,48 @@ export interface CreateOAuthClientResult {
   client: OAuthClient;
   client_secret: string; // plaintext, shown once
 }
+
+export interface OAuthToken {
+  id: string;
+  client_id: string;
+  identity_id: string;
+  jti: string;
+  scopes: string[];
+  expires_at: string;
+  created_at: string;
+  identity_email: string;
+}
+
+export const listOAuthTokens = () => api.get<OAuthToken[]>('/oauth2/tokens');
+export const adminRevokeOAuthToken = (id: string) => api.delete(`/oauth2/tokens/${id}`);
+
+export interface TokenInspectResult {
+  header?: Record<string, unknown>;
+  claims?: {
+    iss?: string;
+    sub?: string;
+    aud?: string[];
+    exp?: number;
+    iat?: number;
+    jti?: string;
+    email?: string;
+    scope?: string;
+    nonce?: string;
+  };
+  status: {
+    signature_valid: boolean;
+    expired: boolean;
+    db_status: 'active' | 'revoked' | 'not_found' | 'unknown';
+    active: boolean;
+    error?: string;
+  };
+}
+
+export const inspectOAuthToken = (token: string) =>
+  api.post<TokenInspectResult>('/oauth2/tokens/inspect', { token });
+
+export const rotateOAuthClientSecret = (id: string) =>
+  api.post<{ client_secret: string }>(`/oauth2/clients/${id}/rotate-secret`);
 
 export const listOAuthClients = () => api.get<OAuthClient[]>('/oauth2/clients');
 export const createOAuthClient = (data: CreateOAuthClientData) =>

@@ -131,3 +131,33 @@ func NewDeleteClientHandler(q *db.Queries) *DeleteClientHandler {
 func (h *DeleteClientHandler) Handle(ctx context.Context, cmd DeleteClientCommand) error {
 	return h.q.DeleteOAuth2Client(ctx, cmd.ID)
 }
+
+// ---- Rotate Secret ----
+
+type RotateSecretCommand struct{ ID pgtype.UUID }
+
+type RotateSecretResult struct{ ClientSecret string }
+
+type RotateSecretHandler struct{ q *db.Queries }
+
+func NewRotateSecretHandler(q *db.Queries) *RotateSecretHandler {
+	return &RotateSecretHandler{q: q}
+}
+
+func (h *RotateSecretHandler) Handle(ctx context.Context, cmd RotateSecretCommand) (RotateSecretResult, error) {
+	secret, err := GenerateClientSecret()
+	if err != nil {
+		return RotateSecretResult{}, fmt.Errorf("generating client_secret: %w", err)
+	}
+	hash, err := HashClientSecret(secret)
+	if err != nil {
+		return RotateSecretResult{}, fmt.Errorf("hashing client_secret: %w", err)
+	}
+	if err := h.q.UpdateOAuth2ClientSecret(ctx, db.UpdateOAuth2ClientSecretParams{
+		ID:               cmd.ID,
+		ClientSecretHash: hash,
+	}); err != nil {
+		return RotateSecretResult{}, err
+	}
+	return RotateSecretResult{ClientSecret: secret}, nil
+}

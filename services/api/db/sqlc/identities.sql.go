@@ -140,3 +140,17 @@ func (q *Queries) ListIdentities(ctx context.Context) ([]Identity, error) {
 	}
 	return items, nil
 }
+
+const updateIdentityPassword = `-- name: UpdateIdentityPassword :exec
+UPDATE identities SET pw_hash = $2, updated_at = NOW() WHERE id = $1
+`
+
+type UpdateIdentityPasswordParams struct {
+	ID     pgtype.UUID `json:"id"`
+	PwHash string      `json:"pw_hash"`
+}
+
+func (q *Queries) UpdateIdentityPassword(ctx context.Context, arg UpdateIdentityPasswordParams) error {
+	_, err := q.db.Exec(ctx, updateIdentityPassword, arg.ID, arg.PwHash)
+	return err
+}

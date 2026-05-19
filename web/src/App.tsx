@@ -6,6 +6,7 @@ import IdentityRolesPage from '@/pages/IdentityRolesPage';
 import RolesPage from '@/pages/RolesPage';
 import RolePermissionsPage from '@/pages/RolePermissionsPage';
 import OAuthClientsPage from '@/pages/OAuthClientsPage';
+import TokensPage from '@/pages/TokensPage';
 import IdentityDetailPage from '@/pages/IdentityDetailPage';
 import AuditLogsPage from '@/pages/AuditLogsPage';
 import ConsentPage from '@/pages/ConsentPage';
@@ -66,6 +67,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <OAuthClientsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/oauth2/tokens"
+        element={
+          <ProtectedRoute>
+            <TokensPage />
           </ProtectedRoute>
         }
       />

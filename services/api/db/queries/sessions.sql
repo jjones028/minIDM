@@ -17,3 +17,6 @@ DELETE FROM sessions WHERE expires_at < NOW();
 SELECT * FROM sessions
 WHERE identity_id = $1 AND expires_at > NOW()
 ORDER BY created_at DESC;
+
+-- name: DeleteSessionsByIdentityID :exec
+DELETE FROM sessions WHERE identity_id = $1;

@@ -3,10 +3,11 @@ package identity
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
+
 	db "minIDM/db/sqlc"
 	"minIDM/internal/audit"
 	"minIDM/internal/rbac"
-	"net/http"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -19,6 +20,7 @@ func Register(mux *http.ServeMux, queries *db.Queries, protectRead, protectWrite
 		getIdentity:           NewGetIdentityHandler(queries),
 		listIdentitySessions:  NewListIdentitySessionsHandler(queries),
 		revokeIdentitySession: NewRevokeIdentitySessionHandler(queries),
+		resetPassword:         NewResetPasswordHandler(queries),
 		auditor:               auditor,
 	}
 	api.RegisterRoutes(mux, protectRead, protectWrite)
@@ -30,6 +32,7 @@ type API struct {
 	getIdentity           *GetIdentityHandler
 	listIdentitySessions  *ListIdentitySessionsHandler
 	revokeIdentitySession *RevokeIdentitySessionHandler
+	resetPassword         *ResetPasswordHandler
 	auditor               *audit.Auditor
 }
 
@@ -39,6 +42,7 @@ func (a *API) RegisterRoutes(mux *http.ServeMux, protectRead, protectWrite func(
 	mux.Handle("GET /api/identities/{id}", protectRead(http.HandlerFunc(a.Get)))
 	mux.Handle("GET /api/identities/{id}/sessions", protectRead(http.HandlerFunc(a.ListSessions)))
 	mux.Handle("DELETE /api/identities/{id}/sessions/{handle}", protectWrite(http.HandlerFunc(a.RevokeSession)))
+	mux.Handle("POST /api/identities/{id}/reset-password", protectWrite(http.HandlerFunc(a.ResetPassword)))
 }
 
 func (a *API) List(w http.ResponseWriter, r *http.Request) {
@@ -167,6 +171,35 @@ func (a *API) Register(w http.ResponseWriter, r *http.Request) {
 		"email": req.Email,
 	})
 	w.WriteHeader(http.StatusCreated)
+}
+
+func (a *API) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	id, err := parseUUID(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "invalid_id", http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid_request", http.StatusBadRequest)
+		return
+	}
+	if err := a.resetPassword.Handle(r.Context(), ResetPasswordCommand{
+		IdentityID:  id,
+		NewPassword: req.Password,
+	}); err != nil {
+		if errors.Is(err, ErrPasswordTooShort) {
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	actorID, _ := rbac.IdentityFromContext(r.Context())
+	a.auditor.Log(r.Context(), actorID, "identity.password.reset", "identity", audit.UUIDStr(id), nil)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func parseUUID(s string) (pgtype.UUID, error) {
