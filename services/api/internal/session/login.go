@@ -43,6 +43,10 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (*LoginResu
 		return nil, ErrInvalidCredentials
 	}
 
+	if !ident.IsEnabled {
+		return nil, ErrInvalidCredentials
+	}
+
 	ok, err := identity.VerifyPassword(cmd.Password, ident.PwHash)
 	if err != nil || !ok {
 		return nil, ErrInvalidCredentials
