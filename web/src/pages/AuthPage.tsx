@@ -38,7 +38,11 @@ export default function AuthPage() {
       await login({ email, password });
       setAuthenticated(true);
       const next = searchParams.get('next');
-      navigate(next ?? '/');
+      if (next) {
+        window.location.href = next;
+      } else {
+        navigate('/');
+      }
     } catch (err) {
       const axiosError = err as AxiosError<string>;
       const msg = axiosError.response?.data?.trim();

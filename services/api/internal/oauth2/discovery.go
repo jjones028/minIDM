@@ -21,6 +21,8 @@ func (h *DiscoveryHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"token_endpoint":                        h.issuer + "/oauth2/token",
 		"userinfo_endpoint":                     h.issuer + "/oauth2/userinfo",
 		"jwks_uri":                              h.issuer + "/oauth2/jwks.json",
+		"introspection_endpoint":                h.issuer + "/oauth2/introspect",
+		"revocation_endpoint":                   h.issuer + "/oauth2/revoke",
 		"response_types_supported":              []string{"code"},
 		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
 		"subject_types_supported":               []string{"public"},

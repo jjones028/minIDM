@@ -14,11 +14,13 @@ RUN go mod download
 COPY services/api/ .
 # Copy the built frontend into the Go package for embedding
 COPY --from=frontend-build /app/dist ./internal/app/dist
-RUN CGO_ENABLED=0 GOOS=linux go build -o /minIDM ./cmd/server/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o /minIDM ./cmd/server/main.go && \
+    CGO_ENABLED=0 GOOS=linux go build -o /migrate ./cmd/migrate/main.go
 
 # Runtime Stage
 FROM gcr.io/distroless/static-debian12
 WORKDIR /app
 COPY --from=backend-build /minIDM .
+COPY --from=backend-build /migrate .
 EXPOSE 8080
 ENTRYPOINT ["/app/minIDM"]
