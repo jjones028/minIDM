@@ -1,6 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { listAuditLogs, isUnauthorized, type AuditLog } from '@/api';
+import {
+  listAuditLogs, listAuditResourceTypes, isUnauthorized,
+  type AuditLog, type AuditLogsFilter,
+} from '@/api';
 import { useAuth } from '@/context/auth';
 import {
   Card, CardContent, CardHeader, CardTitle, CardDescription,
@@ -8,6 +11,8 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { AppNav } from '@/components/app-nav';
 
 // --- JSON syntax highlighter ---
@@ -64,7 +69,7 @@ function JsonHighlight({ value }: { value: Record<string, unknown> }) {
   );
 }
 
-// --- Page ---
+// --- Helpers ---
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
@@ -79,6 +84,14 @@ function summariseDetails(details: Record<string, unknown> | null): string {
     .map(([k, v]) => `${k}: ${v}`)
     .join(', ');
 }
+
+function actorLabel(log: AuditLog): string {
+  if (log.actor_email) return log.actor_email;
+  if (log.actor_id) return log.actor_id.slice(0, 8) + '…';
+  return 'system';
+}
+
+// --- Row ---
 
 function AuditRow({ log }: { log: AuditLog }) {
   const [expanded, setExpanded] = useState(false);
@@ -102,8 +115,8 @@ function AuditRow({ log }: { log: AuditLog }) {
         <TableCell className="font-mono text-xs text-muted-foreground">
           {log.resource_id ?? '—'}
         </TableCell>
-        <TableCell className="font-mono text-xs text-muted-foreground">
-          {log.actor_id ? log.actor_id.slice(0, 8) + '…' : 'system'}
+        <TableCell className="text-xs text-muted-foreground">
+          {actorLabel(log)}
         </TableCell>
         <TableCell className="text-xs text-muted-foreground">
           {hasDetails ? (
@@ -126,17 +139,39 @@ function AuditRow({ log }: { log: AuditLog }) {
   );
 }
 
+// --- Page ---
+
+const PAGE_SIZE = 50;
+
 export default function AuditLogsPage() {
   const navigate = useNavigate();
   const { setAuthenticated } = useAuth();
-  const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [resourceTypes, setResourceTypes] = useState<string[]>([]);
+
+  // filter inputs (committed on Apply)
+  const [resourceType, setResourceType] = useState('');
+  const [actionFilter, setActionFilter] = useState('');
+  const [actorIdFilter, setActorIdFilter] = useState('');
+  const [since, setSince] = useState('');
+  const [until, setUntil] = useState('');
+
+  // committed filter used for actual fetch
+  const [activeFilter, setActiveFilter] = useState<AuditLogsFilter>({});
+
+  const fetch = useCallback((filter: AuditLogsFilter, pg: number) => {
     let cancelled = false;
     setLoading(true);
-    listAuditLogs(100, 0)
-      .then(({ data }) => { if (!cancelled) setLogs(data ?? []); })
+    listAuditLogs({ ...filter, limit: PAGE_SIZE, offset: pg * PAGE_SIZE })
+      .then(({ data }) => {
+        if (cancelled) return;
+        setLogs(data.logs ?? []);
+        setTotal(data.total);
+      })
       .catch(err => {
         if (isUnauthorized(err)) {
           setAuthenticated(false);
@@ -145,7 +180,43 @@ export default function AuditLogsPage() {
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
+  }, [navigate, setAuthenticated]);
+
+  useEffect(() => {
+    listAuditResourceTypes()
+      .then(({ data }) => setResourceTypes(data ?? []))
+      .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    return fetch(activeFilter, page);
+  }, [activeFilter, page, fetch]);
+
+  function handleApply(e: React.FormEvent) {
+    e.preventDefault();
+    const filter: AuditLogsFilter = {};
+    if (resourceType) filter.resource_type = resourceType;
+    if (actionFilter) filter.action = actionFilter;
+    if (actorIdFilter) filter.actor_id = actorIdFilter;
+    if (since) filter.since = new Date(since).toISOString();
+    if (until) filter.until = new Date(until + 'T23:59:59').toISOString();
+    setPage(0);
+    setActiveFilter(filter);
+  }
+
+  function handleReset() {
+    setResourceType('');
+    setActionFilter('');
+    setActorIdFilter('');
+    setSince('');
+    setUntil('');
+    setPage(0);
+    setActiveFilter({});
+  }
+
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+  const from = total === 0 ? 0 : page * PAGE_SIZE + 1;
+  const to = Math.min((page + 1) * PAGE_SIZE, total);
 
   return (
     <div className="min-h-screen p-4 md:p-12">
@@ -156,15 +227,79 @@ export default function AuditLogsPage() {
           <CardHeader>
             <CardTitle>Audit Log</CardTitle>
             <CardDescription>
-              Recent administrative actions across identities, roles, sessions, and OAuth2 clients.
+              Administrative actions across identities, roles, sessions, and OAuth2 clients.
               Click a row to expand its details.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+
+            {/* Filter bar */}
+            <form onSubmit={handleApply} className="flex flex-wrap gap-2 items-end">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-muted-foreground">Resource type</label>
+                <select
+                  value={resourceType}
+                  onChange={e => setResourceType(e.target.value)}
+                  className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <option value="">All</option>
+                  {resourceTypes.map(rt => (
+                    <option key={rt} value={rt}>{rt}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-muted-foreground">Action prefix</label>
+                <Input
+                  className="h-9 w-36"
+                  placeholder="e.g. identity"
+                  value={actionFilter}
+                  onChange={e => setActionFilter(e.target.value)}
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-muted-foreground">Actor ID (UUID)</label>
+                <Input
+                  className="h-9 w-72 font-mono text-xs"
+                  placeholder="xxxxxxxx-xxxx-…"
+                  value={actorIdFilter}
+                  onChange={e => setActorIdFilter(e.target.value)}
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-muted-foreground">Since</label>
+                <Input
+                  type="date"
+                  className="h-9 w-36"
+                  value={since}
+                  onChange={e => setSince(e.target.value)}
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-muted-foreground">Until</label>
+                <Input
+                  type="date"
+                  className="h-9 w-36"
+                  value={until}
+                  onChange={e => setUntil(e.target.value)}
+                />
+              </div>
+
+              <Button type="submit" size="sm" className="h-9">Apply</Button>
+              <Button type="button" size="sm" variant="ghost" className="h-9" onClick={handleReset}>
+                Reset
+              </Button>
+            </form>
+
+            {/* Table */}
             {loading ? (
               <p className="text-sm text-muted-foreground">Loading…</p>
             ) : logs.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No audit log entries yet.</p>
+              <p className="text-sm text-muted-foreground">No audit log entries match the current filter.</p>
             ) : (
               <Table>
                 <TableHeader>
@@ -183,6 +318,31 @@ export default function AuditLogsPage() {
                   ))}
                 </TableBody>
               </Table>
+            )}
+
+            {/* Pagination */}
+            {total > PAGE_SIZE && (
+              <div className="flex items-center justify-between text-sm text-muted-foreground pt-2">
+                <span>{from}–{to} of {total}</span>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page === 0}
+                    onClick={() => setPage(p => p - 1)}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page + 1 >= totalPages}
+                    onClick={() => setPage(p => p + 1)}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
             )}
           </CardContent>
         </Card>
