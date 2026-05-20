@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  getIdentities, registerIdentity, logout, isUnauthorized, type Identity,
+  getIdentities, createIdentity, logout, isUnauthorized, type Identity,
 } from '@/api';
 import { useAuth } from '@/context/auth';
 import { Button } from '@/components/ui/button';
@@ -46,7 +46,7 @@ export default function DashboardPage() {
   const handleCreateIdentity = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await registerIdentity({ email, password });
+      await createIdentity({ email, password });
       setEmail('');
       setPassword('');
       fetchIdentities();
@@ -115,7 +115,14 @@ export default function DashboardPage() {
               <TableBody>
                 {identities.map(id => (
                   <TableRow key={id.id}>
-                    <TableCell className="pl-6 font-medium">{id.email}</TableCell>
+                    <TableCell className="pl-6 font-medium">
+                      <span>{id.email}</span>
+                      {!id.is_enabled && (
+                        <span className="ml-2 inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20 dark:bg-amber-400/10 dark:text-amber-400 dark:ring-amber-400/30">
+                          pending
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell className="font-mono text-sm text-muted-foreground">{id.subject_id}</TableCell>
                     <TableCell>
                       <Button

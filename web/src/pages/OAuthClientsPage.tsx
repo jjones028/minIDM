@@ -40,6 +40,7 @@ export default function OAuthClientsPage() {
   const [editScopes, setEditScopes] = useState<string[]>([]);
   const [editEnabled, setEditEnabled] = useState(true);
   const [editAutoConsent, setEditAutoConsent] = useState(false);
+  const [editAllowRegistration, setEditAllowRegistration] = useState(false);
 
   // Secret reveal modal — used for both new client creation and rotation
   const [revealedSecret, setRevealedSecret] = useState<{ clientId: string; secret: string; rotated?: boolean } | null>(null);
@@ -107,6 +108,7 @@ export default function OAuthClientsPage() {
     setEditScopes(c.scopes);
     setEditEnabled(c.is_enabled);
     setEditAutoConsent(c.auto_consent);
+    setEditAllowRegistration(c.allow_registration);
   };
 
   const handleUpdate = async (id: string) => {
@@ -122,6 +124,7 @@ export default function OAuthClientsPage() {
       scopes: editScopes,
       is_enabled: editEnabled,
       auto_consent: editAutoConsent,
+      allow_registration: editAllowRegistration,
     };
     try {
       await updateOAuthClient(id, update);
@@ -388,6 +391,20 @@ export default function OAuthClientsPage() {
                                   </span>
                                 </span>
                               </label>
+                              <label className="flex items-start gap-2.5 cursor-pointer py-1">
+                                <input
+                                  type="checkbox"
+                                  className="mt-0.5"
+                                  checked={editAllowRegistration}
+                                  onChange={e => setEditAllowRegistration(e.target.checked)}
+                                />
+                                <span>
+                                  <span className="text-sm font-medium">Allow registration</span>
+                                  <span className="block text-xs text-muted-foreground">
+                                    Show the Sign Up tab on the login screen when users arrive via this client (requires the global REGISTRATION_ENABLED flag to also be set)
+                                  </span>
+                                </span>
+                              </label>
                             </div>
                           </div>
                             <div className="flex gap-2 pt-2 justify-end">
@@ -428,6 +445,11 @@ export default function OAuthClientsPage() {
                             {client.auto_consent && (
                               <span className="text-xs px-1.5 py-0.5 rounded-sm font-medium w-fit bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
                                 auto-consent
+                              </span>
+                            )}
+                            {client.allow_registration && (
+                              <span className="text-xs px-1.5 py-0.5 rounded-sm font-medium w-fit bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                                registration
                               </span>
                             )}
                           </div>

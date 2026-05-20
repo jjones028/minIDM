@@ -60,19 +60,20 @@ func (q *Queries) CreateAuthorizationCode(ctx context.Context, arg CreateAuthori
 }
 
 const createOAuth2Client = `-- name: CreateOAuth2Client :one
-INSERT INTO oauth2_clients (client_id, client_secret_hash, name, description, redirect_uris, scopes, auto_consent)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, client_id, client_secret_hash, name, description, redirect_uris, scopes, is_enabled, created_at, updated_at, auto_consent
+INSERT INTO oauth2_clients (client_id, client_secret_hash, name, description, redirect_uris, scopes, auto_consent, allow_registration)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, client_id, client_secret_hash, name, description, redirect_uris, scopes, is_enabled, created_at, updated_at, auto_consent, allow_registration
 `
 
 type CreateOAuth2ClientParams struct {
-	ClientID         string      `json:"client_id"`
-	ClientSecretHash pgtype.Text `json:"client_secret_hash"`
-	Name             string      `json:"name"`
-	Description      pgtype.Text `json:"description"`
-	RedirectUris     []string    `json:"redirect_uris"`
-	Scopes           []string    `json:"scopes"`
-	AutoConsent      bool        `json:"auto_consent"`
+	ClientID          string      `json:"client_id"`
+	ClientSecretHash  pgtype.Text `json:"client_secret_hash"`
+	Name              string      `json:"name"`
+	Description       pgtype.Text `json:"description"`
+	RedirectUris      []string    `json:"redirect_uris"`
+	Scopes            []string    `json:"scopes"`
+	AutoConsent       bool        `json:"auto_consent"`
+	AllowRegistration bool        `json:"allow_registration"`
 }
 
 func (q *Queries) CreateOAuth2Client(ctx context.Context, arg CreateOAuth2ClientParams) (Oauth2Client, error) {
@@ -84,6 +85,7 @@ func (q *Queries) CreateOAuth2Client(ctx context.Context, arg CreateOAuth2Client
 		arg.RedirectUris,
 		arg.Scopes,
 		arg.AutoConsent,
+		arg.AllowRegistration,
 	)
 	var i Oauth2Client
 	err := row.Scan(
@@ -98,6 +100,7 @@ func (q *Queries) CreateOAuth2Client(ctx context.Context, arg CreateOAuth2Client
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AutoConsent,
+		&i.AllowRegistration,
 	)
 	return i, err
 }
@@ -176,7 +179,7 @@ func (q *Queries) GetAuthorizationCode(ctx context.Context, code string) (Oauth2
 }
 
 const getOAuth2ClientByClientID = `-- name: GetOAuth2ClientByClientID :one
-SELECT id, client_id, client_secret_hash, name, description, redirect_uris, scopes, is_enabled, created_at, updated_at, auto_consent FROM oauth2_clients WHERE client_id = $1 LIMIT 1
+SELECT id, client_id, client_secret_hash, name, description, redirect_uris, scopes, is_enabled, created_at, updated_at, auto_consent, allow_registration FROM oauth2_clients WHERE client_id = $1 LIMIT 1
 `
 
 func (q *Queries) GetOAuth2ClientByClientID(ctx context.Context, clientID string) (Oauth2Client, error) {
@@ -194,12 +197,13 @@ func (q *Queries) GetOAuth2ClientByClientID(ctx context.Context, clientID string
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AutoConsent,
+		&i.AllowRegistration,
 	)
 	return i, err
 }
 
 const getOAuth2ClientByID = `-- name: GetOAuth2ClientByID :one
-SELECT id, client_id, client_secret_hash, name, description, redirect_uris, scopes, is_enabled, created_at, updated_at, auto_consent FROM oauth2_clients WHERE id = $1 LIMIT 1
+SELECT id, client_id, client_secret_hash, name, description, redirect_uris, scopes, is_enabled, created_at, updated_at, auto_consent, allow_registration FROM oauth2_clients WHERE id = $1 LIMIT 1
 `
 
 func (q *Queries) GetOAuth2ClientByID(ctx context.Context, id pgtype.UUID) (Oauth2Client, error) {
@@ -217,20 +221,22 @@ func (q *Queries) GetOAuth2ClientByID(ctx context.Context, id pgtype.UUID) (Oaut
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AutoConsent,
+		&i.AllowRegistration,
 	)
 	return i, err
 }
 
 const getOAuth2ClientPublicInfo = `-- name: GetOAuth2ClientPublicInfo :one
-SELECT name, description, scopes, auto_consent FROM oauth2_clients
+SELECT name, description, scopes, auto_consent, allow_registration FROM oauth2_clients
 WHERE client_id = $1 AND is_enabled = TRUE LIMIT 1
 `
 
 type GetOAuth2ClientPublicInfoRow struct {
-	Name        string      `json:"name"`
-	Description pgtype.Text `json:"description"`
-	Scopes      []string    `json:"scopes"`
-	AutoConsent bool        `json:"auto_consent"`
+	Name              string      `json:"name"`
+	Description       pgtype.Text `json:"description"`
+	Scopes            []string    `json:"scopes"`
+	AutoConsent       bool        `json:"auto_consent"`
+	AllowRegistration bool        `json:"allow_registration"`
 }
 
 func (q *Queries) GetOAuth2ClientPublicInfo(ctx context.Context, clientID string) (GetOAuth2ClientPublicInfoRow, error) {
@@ -241,6 +247,7 @@ func (q *Queries) GetOAuth2ClientPublicInfo(ctx context.Context, clientID string
 		&i.Description,
 		&i.Scopes,
 		&i.AutoConsent,
+		&i.AllowRegistration,
 	)
 	return i, err
 }
@@ -369,7 +376,7 @@ func (q *Queries) ListActiveOAuth2Tokens(ctx context.Context) ([]ListActiveOAuth
 }
 
 const listOAuth2Clients = `-- name: ListOAuth2Clients :many
-SELECT id, client_id, client_secret_hash, name, description, redirect_uris, scopes, is_enabled, created_at, updated_at, auto_consent FROM oauth2_clients ORDER BY created_at DESC
+SELECT id, client_id, client_secret_hash, name, description, redirect_uris, scopes, is_enabled, created_at, updated_at, auto_consent, allow_registration FROM oauth2_clients ORDER BY created_at DESC
 `
 
 func (q *Queries) ListOAuth2Clients(ctx context.Context) ([]Oauth2Client, error) {
@@ -393,6 +400,7 @@ func (q *Queries) ListOAuth2Clients(ctx context.Context) ([]Oauth2Client, error)
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.AutoConsent,
+			&i.AllowRegistration,
 		); err != nil {
 			return nil, err
 		}
@@ -424,19 +432,20 @@ func (q *Queries) RevokeOAuth2Token(ctx context.Context, id pgtype.UUID) error {
 
 const updateOAuth2Client = `-- name: UpdateOAuth2Client :one
 UPDATE oauth2_clients
-SET name = $2, description = $3, redirect_uris = $4, scopes = $5, is_enabled = $6, auto_consent = $7, updated_at = NOW()
+SET name = $2, description = $3, redirect_uris = $4, scopes = $5, is_enabled = $6, auto_consent = $7, allow_registration = $8, updated_at = NOW()
 WHERE id = $1
-RETURNING id, client_id, client_secret_hash, name, description, redirect_uris, scopes, is_enabled, created_at, updated_at, auto_consent
+RETURNING id, client_id, client_secret_hash, name, description, redirect_uris, scopes, is_enabled, created_at, updated_at, auto_consent, allow_registration
 `
 
 type UpdateOAuth2ClientParams struct {
-	ID           pgtype.UUID `json:"id"`
-	Name         string      `json:"name"`
-	Description  pgtype.Text `json:"description"`
-	RedirectUris []string    `json:"redirect_uris"`
-	Scopes       []string    `json:"scopes"`
-	IsEnabled    bool        `json:"is_enabled"`
-	AutoConsent  bool        `json:"auto_consent"`
+	ID                pgtype.UUID `json:"id"`
+	Name              string      `json:"name"`
+	Description       pgtype.Text `json:"description"`
+	RedirectUris      []string    `json:"redirect_uris"`
+	Scopes            []string    `json:"scopes"`
+	IsEnabled         bool        `json:"is_enabled"`
+	AutoConsent       bool        `json:"auto_consent"`
+	AllowRegistration bool        `json:"allow_registration"`
 }
 
 func (q *Queries) UpdateOAuth2Client(ctx context.Context, arg UpdateOAuth2ClientParams) (Oauth2Client, error) {
@@ -448,6 +457,7 @@ func (q *Queries) UpdateOAuth2Client(ctx context.Context, arg UpdateOAuth2Client
 		arg.Scopes,
 		arg.IsEnabled,
 		arg.AutoConsent,
+		arg.AllowRegistration,
 	)
 	var i Oauth2Client
 	err := row.Scan(
@@ -462,6 +472,7 @@ func (q *Queries) UpdateOAuth2Client(ctx context.Context, arg UpdateOAuth2Client
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.AutoConsent,
+		&i.AllowRegistration,
 	)
 	return i, err
 }

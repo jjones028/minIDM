@@ -18,6 +18,7 @@ func NewHandler(queries *db.Queries, signingKey *rsa.PrivateKey, issuer string) 
 	mux := http.NewServeMux()
 
 	secureCookies := os.Getenv("SECURE_COOKIES") == "true"
+	registrationEnabled := os.Getenv("REGISTRATION_ENABLED") == "true"
 
 	// Audit log route (requires audit_log:read) + returns the shared Auditor.
 	protectAuditRead := chain(rbac.Authenticate(queries), rbac.Require("audit_log", "read", queries))
@@ -34,10 +35,30 @@ func NewHandler(queries *db.Queries, signingKey *rsa.PrivateKey, issuer string) 
 		json.NewEncoder(w).Encode(map[string]any{"id": id})
 	})))
 
+	// Public: app configuration for frontend feature flags.
+	// ?client_id=xxx narrows registration_enabled to the per-client setting.
+	mux.HandleFunc("GET /api/config", func(w http.ResponseWriter, r *http.Request) {
+		effective := registrationEnabled
+		if effective {
+			if clientID := r.URL.Query().Get("client_id"); clientID != "" {
+				client, err := queries.GetOAuth2ClientByClientID(r.Context(), clientID)
+				if err != nil || !client.IsEnabled {
+					effective = false
+				} else {
+					effective = client.AllowRegistration
+				}
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{
+			"registration_enabled": effective,
+		})
+	})
+
 	// Protected: identity routes
 	protectIdentityRead := chain(rbac.Authenticate(queries), rbac.Require("identity", "read", queries))
 	protectIdentityWrite := chain(rbac.Authenticate(queries), rbac.Require("identity", "write", queries))
-	identity.Register(mux, queries, protectIdentityRead, protectIdentityWrite, auditor)
+	identity.Register(mux, queries, protectIdentityRead, protectIdentityWrite, auditor, registrationEnabled)
 
 	// Protected: role management routes
 	protectRoleRead := chain(rbac.Authenticate(queries), rbac.Require("role", "read", queries))

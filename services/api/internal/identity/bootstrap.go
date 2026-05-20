@@ -17,7 +17,7 @@ func Bootstrap(ctx context.Context, q *db.Queries, email, password string) error
 		return nil
 	}
 
-	h := NewAddRegistrationHandler(q)
+	h := NewAddRegistrationHandler(q, true)
 	if _, err := h.Handle(ctx, AddRegistrationCommand{Email: email, Password: password}); err != nil {
 		return fmt.Errorf("creating bootstrap admin: %w", err)
 	}
