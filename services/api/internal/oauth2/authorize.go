@@ -2,6 +2,7 @@ package oauth2
 
 import (
 	"crypto/rsa"
+	"crypto/sha256"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -100,8 +101,14 @@ func (h *AuthorizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		loginRedirect(w, r)
 		return
 	}
-	session, err := h.q.GetSessionByToken(r.Context(), cookie.Value)
+	ch := sha256.Sum256([]byte(cookie.Value))
+	session, err := h.q.GetSessionByToken(r.Context(), fmt.Sprintf("%x", ch[:]))
 	if err != nil {
+		loginRedirect(w, r)
+		return
+	}
+	ident, err := h.q.GetIdentityByID(r.Context(), session.IdentityID)
+	if err != nil || !ident.IsEnabled {
 		loginRedirect(w, r)
 		return
 	}

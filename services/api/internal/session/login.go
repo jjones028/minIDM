@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -59,7 +60,7 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (*LoginResu
 
 	expiresAt := time.Now().Add(sessionDuration)
 	_, err = h.q.CreateSession(ctx, db.CreateSessionParams{
-		Token:      token,
+		Token:      hashSessionToken(token),
 		IdentityID: ident.ID,
 		ExpiresAt:  pgtype.Timestamptz{Time: expiresAt, Valid: true},
 	})
@@ -76,4 +77,11 @@ func generateToken() (string, error) {
 		return "", err
 	}
 	return base64.URLEncoding.EncodeToString(b), nil
+}
+
+// hashSessionToken returns the hex SHA-256 of a session token for safe DB storage.
+// The plaintext token stays in the cookie; only the hash is persisted.
+func hashSessionToken(token string) string {
+	h := sha256.Sum256([]byte(token))
+	return fmt.Sprintf("%x", h[:])
 }

@@ -2,6 +2,8 @@ package rbac
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
 	db "minIDM/db/sqlc"
 	"net/http"
 
@@ -28,7 +30,8 @@ func Authenticate(queries *db.Queries) func(http.Handler) http.Handler {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
-			session, err := queries.GetSessionByToken(r.Context(), cookie.Value)
+			h := sha256.Sum256([]byte(cookie.Value))
+			session, err := queries.GetSessionByToken(r.Context(), fmt.Sprintf("%x", h[:]))
 			if err != nil {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
