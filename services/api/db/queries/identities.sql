@@ -1,6 +1,6 @@
 -- name: CreateIdentity :one
-INSERT INTO identities (subject_id, email, pw_hash)
-VALUES ($1, $2, $3)
+INSERT INTO identities (subject_id, email, pw_hash, is_enabled)
+VALUES ($1, $2, $3, $4)
 RETURNING *;
 
 -- name: GetIdentityByEmail :one

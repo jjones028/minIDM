@@ -16,32 +16,34 @@ import (
 
 // clientResponse is the safe representation of an OAuth2 client (no secret hash).
 type clientResponse struct {
-	ID           pgtype.UUID        `json:"id"`
-	ClientID     string             `json:"client_id"`
-	Name         string             `json:"name"`
-	Description  pgtype.Text        `json:"description"`
-	RedirectURIs []string           `json:"redirect_uris"`
-	Scopes       []string           `json:"scopes"`
-	IsEnabled    bool               `json:"is_enabled"`
-	IsPublic     bool               `json:"is_public"`
-	AutoConsent  bool               `json:"auto_consent"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ID                pgtype.UUID        `json:"id"`
+	ClientID          string             `json:"client_id"`
+	Name              string             `json:"name"`
+	Description       pgtype.Text        `json:"description"`
+	RedirectURIs      []string           `json:"redirect_uris"`
+	Scopes            []string           `json:"scopes"`
+	IsEnabled         bool               `json:"is_enabled"`
+	IsPublic          bool               `json:"is_public"`
+	AutoConsent       bool               `json:"auto_consent"`
+	AllowRegistration bool               `json:"allow_registration"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
 
 func toClientResponse(c db.Oauth2Client) clientResponse {
 	return clientResponse{
-		ID:           c.ID,
-		ClientID:     c.ClientID,
-		Name:         c.Name,
-		Description:  c.Description,
-		RedirectURIs: c.RedirectUris,
-		Scopes:       c.Scopes,
-		IsEnabled:    c.IsEnabled,
-		IsPublic:     !c.ClientSecretHash.Valid,
-		AutoConsent:  c.AutoConsent,
-		CreatedAt:    c.CreatedAt,
-		UpdatedAt:    c.UpdatedAt,
+		ID:                c.ID,
+		ClientID:          c.ClientID,
+		Name:              c.Name,
+		Description:       c.Description,
+		RedirectURIs:      c.RedirectUris,
+		Scopes:            c.Scopes,
+		IsEnabled:         c.IsEnabled,
+		IsPublic:          !c.ClientSecretHash.Valid,
+		AutoConsent:       c.AutoConsent,
+		AllowRegistration: c.AllowRegistration,
+		CreatedAt:         c.CreatedAt,
+		UpdatedAt:         c.UpdatedAt,
 	}
 }
 
@@ -151,12 +153,13 @@ func (a *API) ListClients(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) CreateClient(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name         string   `json:"name"`
-		Description  string   `json:"description"`
-		RedirectURIs []string `json:"redirect_uris"`
-		Scopes       []string `json:"scopes"`
-		AutoConsent  bool     `json:"auto_consent"`
-		IsPublic     bool     `json:"is_public"`
+		Name              string   `json:"name"`
+		Description       string   `json:"description"`
+		RedirectURIs      []string `json:"redirect_uris"`
+		Scopes            []string `json:"scopes"`
+		AutoConsent       bool     `json:"auto_consent"`
+		IsPublic          bool     `json:"is_public"`
+		AllowRegistration bool     `json:"allow_registration"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid_request", http.StatusBadRequest)
@@ -172,12 +175,13 @@ func (a *API) CreateClient(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := a.createClient.Handle(r.Context(), CreateClientCommand{
-		Name:         req.Name,
-		Description:  req.Description,
-		RedirectURIs: req.RedirectURIs,
-		Scopes:       req.Scopes,
-		AutoConsent:  req.AutoConsent,
-		IsPublic:     req.IsPublic,
+		Name:              req.Name,
+		Description:       req.Description,
+		RedirectURIs:      req.RedirectURIs,
+		Scopes:            req.Scopes,
+		AutoConsent:       req.AutoConsent,
+		IsPublic:          req.IsPublic,
+		AllowRegistration: req.AllowRegistration,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -223,12 +227,13 @@ func (a *API) UpdateClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Name         string   `json:"name"`
-		Description  string   `json:"description"`
-		RedirectURIs []string `json:"redirect_uris"`
-		Scopes       []string `json:"scopes"`
-		IsEnabled    bool     `json:"is_enabled"`
-		AutoConsent  bool     `json:"auto_consent"`
+		Name              string   `json:"name"`
+		Description       string   `json:"description"`
+		RedirectURIs      []string `json:"redirect_uris"`
+		Scopes            []string `json:"scopes"`
+		IsEnabled         bool     `json:"is_enabled"`
+		AutoConsent       bool     `json:"auto_consent"`
+		AllowRegistration bool     `json:"allow_registration"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid_request", http.StatusBadRequest)
@@ -240,13 +245,14 @@ func (a *API) UpdateClient(w http.ResponseWriter, r *http.Request) {
 	}
 
 	client, err := a.updateClient.Handle(r.Context(), UpdateClientCommand{
-		ID:           id,
-		Name:         req.Name,
-		Description:  req.Description,
-		RedirectURIs: req.RedirectURIs,
-		Scopes:       req.Scopes,
-		IsEnabled:    req.IsEnabled,
-		AutoConsent:  req.AutoConsent,
+		ID:                id,
+		Name:              req.Name,
+		Description:       req.Description,
+		RedirectURIs:      req.RedirectURIs,
+		Scopes:            req.Scopes,
+		IsEnabled:         req.IsEnabled,
+		AutoConsent:       req.AutoConsent,
+		AllowRegistration: req.AllowRegistration,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

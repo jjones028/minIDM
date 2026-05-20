@@ -23,8 +23,8 @@ func (q *Queries) CountIdentities(ctx context.Context) (int64, error) {
 }
 
 const createIdentity = `-- name: CreateIdentity :one
-INSERT INTO identities (subject_id, email, pw_hash)
-VALUES ($1, $2, $3)
+INSERT INTO identities (subject_id, email, pw_hash, is_enabled)
+VALUES ($1, $2, $3, $4)
 RETURNING id, subject_id, email, pw_hash, is_enabled, created_at, updated_at
 `
 
@@ -32,10 +32,11 @@ type CreateIdentityParams struct {
 	SubjectID string `json:"subject_id"`
 	Email     string `json:"email"`
 	PwHash    string `json:"pw_hash"`
+	IsEnabled bool   `json:"is_enabled"`
 }
 
 func (q *Queries) CreateIdentity(ctx context.Context, arg CreateIdentityParams) (Identity, error) {
-	row := q.db.QueryRow(ctx, createIdentity, arg.SubjectID, arg.Email, arg.PwHash)
+	row := q.db.QueryRow(ctx, createIdentity, arg.SubjectID, arg.Email, arg.PwHash, arg.IsEnabled)
 	var i Identity
 	err := row.Scan(
 		&i.ID,

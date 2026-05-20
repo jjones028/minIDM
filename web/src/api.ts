@@ -48,13 +48,22 @@ export interface RolePermission {
   action: string;
 }
 
+export interface AppConfig {
+  registration_enabled: boolean;
+}
+
 const api = axios.create({ baseURL: '/api' });
 
+export const getConfig = (clientId?: string) => {
+  const qs = clientId ? `?client_id=${encodeURIComponent(clientId)}` : '';
+  return api.get<AppConfig>(`/config${qs}`);
+};
 export const login = (data: LoginData) => api.post('/login', data);
 export const logout = () => api.delete('/session');
 export const getMe = () => api.get<{ id: string }>('/me');
 export const getIdentities = () => api.get<Identity[]>('/identities');
 export const registerIdentity = (data: RegisterIdentityData) => api.post('/register', data);
+export const createIdentity = (data: RegisterIdentityData) => api.post<Identity>('/identities', data);
 export const getRoles = () => api.get<Role[]>('/roles');
 export const createRole = (name: string, description: string) =>
   api.post<Role>('/roles', { name, description });
@@ -100,6 +109,7 @@ export interface OAuthClient {
   is_enabled: boolean;
   is_public: boolean;
   auto_consent: boolean;
+  allow_registration: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -120,6 +130,7 @@ export interface UpdateOAuthClientData {
   scopes: string[];
   is_enabled: boolean;
   auto_consent: boolean;
+  allow_registration: boolean;
 }
 
 export interface ClientInfo {

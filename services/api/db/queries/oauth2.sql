@@ -1,13 +1,13 @@
 -- name: CreateOAuth2Client :one
-INSERT INTO oauth2_clients (client_id, client_secret_hash, name, description, redirect_uris, scopes, auto_consent)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO oauth2_clients (client_id, client_secret_hash, name, description, redirect_uris, scopes, auto_consent, allow_registration)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
 -- name: GetOAuth2ClientByClientID :one
 SELECT * FROM oauth2_clients WHERE client_id = $1 LIMIT 1;
 
 -- name: GetOAuth2ClientPublicInfo :one
-SELECT name, description, scopes, auto_consent FROM oauth2_clients
+SELECT name, description, scopes, auto_consent, allow_registration FROM oauth2_clients
 WHERE client_id = $1 AND is_enabled = TRUE LIMIT 1;
 
 -- name: GetOAuth2ClientByID :one
@@ -18,7 +18,7 @@ SELECT * FROM oauth2_clients ORDER BY created_at DESC;
 
 -- name: UpdateOAuth2Client :one
 UPDATE oauth2_clients
-SET name = $2, description = $3, redirect_uris = $4, scopes = $5, is_enabled = $6, auto_consent = $7, updated_at = NOW()
+SET name = $2, description = $3, redirect_uris = $4, scopes = $5, is_enabled = $6, auto_consent = $7, allow_registration = $8, updated_at = NOW()
 WHERE id = $1
 RETURNING *;
 

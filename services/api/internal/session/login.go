@@ -15,7 +15,10 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-var ErrInvalidCredentials = errors.New("invalid credentials")
+var (
+	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrAccountNotActive   = errors.New("account not active")
+)
 
 const sessionDuration = 24 * time.Hour
 
@@ -45,7 +48,7 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (*LoginResu
 	}
 
 	if !ident.IsEnabled {
-		return nil, ErrInvalidCredentials
+		return nil, ErrAccountNotActive
 	}
 
 	ok, err := identity.VerifyPassword(cmd.Password, ident.PwHash)

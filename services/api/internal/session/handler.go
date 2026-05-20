@@ -46,6 +46,10 @@ func (a *API) Login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_credentials", http.StatusUnauthorized)
 		return
 	}
+	if errors.Is(err, ErrAccountNotActive) {
+		http.Error(w, "account_not_active", http.StatusForbidden)
+		return
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

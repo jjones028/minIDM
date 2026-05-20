@@ -15,12 +15,13 @@ var ErrPublicClient = errors.New("operation not supported for public clients")
 // ---- Create ----
 
 type CreateClientCommand struct {
-	Name         string
-	Description  string
-	RedirectURIs []string
-	Scopes       []string
-	AutoConsent  bool
-	IsPublic     bool
+	Name              string
+	Description       string
+	RedirectURIs      []string
+	Scopes            []string
+	AutoConsent       bool
+	IsPublic          bool
+	AllowRegistration bool
 }
 
 type CreateClientResult struct {
@@ -60,13 +61,14 @@ func (h *CreateClientHandler) Handle(ctx context.Context, cmd CreateClientComman
 	}
 
 	client, err := h.q.CreateOAuth2Client(ctx, db.CreateOAuth2ClientParams{
-		ClientID:         clientID,
-		ClientSecretHash: secretHash,
-		Name:             cmd.Name,
-		Description:      pgtype.Text{String: cmd.Description, Valid: cmd.Description != ""},
-		RedirectUris:     cmd.RedirectURIs,
-		Scopes:           scopes,
-		AutoConsent:      cmd.AutoConsent,
+		ClientID:          clientID,
+		ClientSecretHash:  secretHash,
+		Name:              cmd.Name,
+		Description:       pgtype.Text{String: cmd.Description, Valid: cmd.Description != ""},
+		RedirectUris:      cmd.RedirectURIs,
+		Scopes:            scopes,
+		AutoConsent:       cmd.AutoConsent,
+		AllowRegistration: cmd.AllowRegistration,
 	})
 	if err != nil {
 		return nil, err
@@ -101,13 +103,14 @@ func (h *GetClientHandler) Handle(ctx context.Context, id pgtype.UUID) (db.Oauth
 // ---- Update ----
 
 type UpdateClientCommand struct {
-	ID           pgtype.UUID
-	Name         string
-	Description  string
-	RedirectURIs []string
-	Scopes       []string
-	IsEnabled    bool
-	AutoConsent  bool
+	ID                pgtype.UUID
+	Name              string
+	Description       string
+	RedirectURIs      []string
+	Scopes            []string
+	IsEnabled         bool
+	AutoConsent       bool
+	AllowRegistration bool
 }
 
 type UpdateClientHandler struct{ q *db.Queries }
@@ -118,13 +121,14 @@ func NewUpdateClientHandler(q *db.Queries) *UpdateClientHandler {
 
 func (h *UpdateClientHandler) Handle(ctx context.Context, cmd UpdateClientCommand) (db.Oauth2Client, error) {
 	return h.q.UpdateOAuth2Client(ctx, db.UpdateOAuth2ClientParams{
-		ID:           cmd.ID,
-		Name:         cmd.Name,
-		Description:  pgtype.Text{String: cmd.Description, Valid: cmd.Description != ""},
-		RedirectUris: cmd.RedirectURIs,
-		Scopes:       cmd.Scopes,
-		IsEnabled:    cmd.IsEnabled,
-		AutoConsent:  cmd.AutoConsent,
+		ID:                cmd.ID,
+		Name:              cmd.Name,
+		Description:       pgtype.Text{String: cmd.Description, Valid: cmd.Description != ""},
+		RedirectUris:      cmd.RedirectURIs,
+		Scopes:            cmd.Scopes,
+		IsEnabled:         cmd.IsEnabled,
+		AutoConsent:       cmd.AutoConsent,
+		AllowRegistration: cmd.AllowRegistration,
 	})
 }
 

@@ -13,9 +13,10 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-func Register(mux *http.ServeMux, queries *db.Queries, protectRead, protectWrite func(http.Handler) http.Handler, auditor *audit.Auditor) {
+func Register(mux *http.ServeMux, queries *db.Queries, protectRead, protectWrite func(http.Handler) http.Handler, auditor *audit.Auditor, registrationEnabled bool) {
 	api := &API{
-		addRegistration:       NewAddRegistrationHandler(queries),
+		addRegistration:       NewAddRegistrationHandler(queries, registrationEnabled),
+		createIdentity:        NewCreateIdentityHandler(queries),
 		listIdentities:        NewListIdentitiesHandler(queries),
 		getIdentity:           NewGetIdentityHandler(queries),
 		listIdentitySessions:  NewListIdentitySessionsHandler(queries),
@@ -29,6 +30,7 @@ func Register(mux *http.ServeMux, queries *db.Queries, protectRead, protectWrite
 
 type API struct {
 	addRegistration       *AddRegistrationHandler
+	createIdentity        *CreateIdentityHandler
 	listIdentities        *ListIdentitiesHandler
 	getIdentity           *GetIdentityHandler
 	listIdentitySessions  *ListIdentitySessionsHandler
@@ -40,6 +42,7 @@ type API struct {
 
 func (a *API) RegisterRoutes(mux *http.ServeMux, protectRead, protectWrite func(http.Handler) http.Handler) {
 	mux.HandleFunc("POST /api/register", a.Register)
+	mux.Handle("POST /api/identities", protectWrite(http.HandlerFunc(a.Create)))
 	mux.Handle("GET /api/identities", protectRead(http.HandlerFunc(a.List)))
 	mux.Handle("GET /api/identities/{id}", protectRead(http.HandlerFunc(a.Get)))
 	mux.Handle("GET /api/identities/{id}/sessions", protectRead(http.HandlerFunc(a.ListSessions)))
@@ -149,6 +152,7 @@ func (a *API) RevokeSession(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// Register handles public self-registration (POST /api/register).
 func (a *API) Register(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Email    string `json:"email"`
@@ -166,11 +170,49 @@ func (a *API) Register(w http.ResponseWriter, r *http.Request) {
 		Email:    req.Email,
 		Password: req.Password,
 	})
+	if errors.Is(err, ErrRegistrationDisabled) {
+		http.Error(w, "registration_disabled", http.StatusForbidden)
+		return
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	a.auditor.Log(r.Context(), pgtype.UUID{}, "identity.register", "identity", audit.UUIDStr(result.ID), map[string]any{
+	a.auditor.Log(r.Context(), pgtype.UUID{}, "identity.register", "identity", audit.UUIDStr(result.Identity.ID), map[string]any{
+		"email": req.Email,
+	})
+	if result.Pending {
+		w.WriteHeader(http.StatusAccepted) // 202 — awaiting admin approval
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+}
+
+// Create handles admin identity creation (POST /api/identities, identity:write).
+// Created identities are immediately enabled.
+func (a *API) Create(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid_request", http.StatusBadRequest)
+		return
+	}
+	result, err := a.createIdentity.Handle(r.Context(), CreateIdentityCommand{
+		Email:    req.Email,
+		Password: req.Password,
+	})
+	if errors.Is(err, ErrPasswordTooShort) {
+		http.Error(w, "password_too_short", http.StatusUnprocessableEntity)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	actorID, _ := rbac.IdentityFromContext(r.Context())
+	a.auditor.Log(r.Context(), actorID, "identity.create", "identity", audit.UUIDStr(result.ID), map[string]any{
 		"email": req.Email,
 	})
 	w.WriteHeader(http.StatusCreated)
