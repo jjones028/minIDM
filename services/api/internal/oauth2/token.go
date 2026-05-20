@@ -108,6 +108,10 @@ func (h *TokenHandler) handleAuthorizationCode(w http.ResponseWriter, r *http.Re
 		tokenError(w, "server_error", "identity not found", http.StatusInternalServerError)
 		return
 	}
+	if !identity.IsEnabled {
+		tokenError(w, "access_denied", "identity is disabled", http.StatusForbidden)
+		return
+	}
 
 	h.issueAndRespond(w, r, client, identity, authCode.Scopes, authCode.Nonce.String)
 }
@@ -151,6 +155,10 @@ func (h *TokenHandler) handleRefreshToken(w http.ResponseWriter, r *http.Request
 	identity, err := h.q.GetIdentityByID(r.Context(), stored.IdentityID)
 	if err != nil {
 		tokenError(w, "server_error", "identity not found", http.StatusInternalServerError)
+		return
+	}
+	if !identity.IsEnabled {
+		tokenError(w, "access_denied", "identity is disabled", http.StatusForbidden)
 		return
 	}
 

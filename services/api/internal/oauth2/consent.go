@@ -2,6 +2,7 @@ package oauth2
 
 import (
 	"crypto/rsa"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -80,14 +81,20 @@ func (h *ConsentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Re-validate session cookie — user must still be logged in.
+	// Re-validate session cookie — user must still be logged in and enabled.
 	cookie, err := r.Cookie("session")
 	if err != nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	session, err := h.q.GetSessionByToken(r.Context(), cookie.Value)
+	ch := sha256.Sum256([]byte(cookie.Value))
+	session, err := h.q.GetSessionByToken(r.Context(), fmt.Sprintf("%x", ch[:]))
 	if err != nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	ident, err := h.q.GetIdentityByID(r.Context(), session.IdentityID)
+	if err != nil || !ident.IsEnabled {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}

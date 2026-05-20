@@ -63,6 +63,10 @@ func (h *UserinfoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid_token","error_description":"identity not found"}`, http.StatusUnauthorized)
 		return
 	}
+	if !identity.IsEnabled {
+		http.Error(w, `{"error":"invalid_token","error_description":"identity is disabled"}`, http.StatusUnauthorized)
+		return
+	}
 
 	resp := map[string]any{
 		"sub": identity.SubjectID,

@@ -24,11 +24,12 @@ func NewLogoutHandler(q *db.Queries) *LogoutHandler {
 }
 
 func (h *LogoutHandler) Handle(ctx context.Context, cmd LogoutCommand) (*LogoutResult, error) {
-	sess, err := h.q.GetSessionByToken(ctx, cmd.Token)
+	hash := hashSessionToken(cmd.Token)
+	sess, err := h.q.GetSessionByToken(ctx, hash)
 	if err != nil {
 		// Session may be expired or already gone — still attempt delete.
-		_ = h.q.DeleteSession(ctx, cmd.Token)
+		_ = h.q.DeleteSession(ctx, hash)
 		return nil, nil
 	}
-	return &LogoutResult{IdentityID: sess.IdentityID}, h.q.DeleteSession(ctx, cmd.Token)
+	return &LogoutResult{IdentityID: sess.IdentityID}, h.q.DeleteSession(ctx, hash)
 }
