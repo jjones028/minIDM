@@ -1,0 +1,55 @@
+# Runs on every pull request targeting main.
+# Catches type errors and broken builds before merge.
+# No secrets required.
+
+name: CI — Build & Type Check
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  frontend:
+    name: Frontend type check & build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Type check
+        working-directory: web
+        run: npx tsc --noEmit
+
+      - name: Build
+        working-directory: web
+        run: npm run build
+
+  backend:
+    name: Backend build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: services/api/go.mod
+          cache-dependency-path: services/api/go.sum
+
+      - name: Build
+        working-directory: services/api
+        run: CGO_ENABLED=0 go build ./...

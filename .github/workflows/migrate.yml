@@ -1,0 +1,43 @@
+# Run database migrations manually as a Kubernetes Job.
+# Trigger this from the Actions tab after any deploy that adds new migrations.
+#
+# Required GitHub secrets (same as deploy.yml):
+#   DIGITALOCEAN_ACCESS_TOKEN, REGISTRY_NAME, CLUSTER_NAME
+
+name: Migrate
+
+on:
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    name: Run goose migrations
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Update kubeconfig
+        run: doctl kubernetes cluster kubeconfig save ${{ secrets.CLUSTER_NAME }}
+
+      - name: Run migration job
+        run: |
+          # Delete previous job run if it exists
+          kubectl delete job minidm-migrate --ignore-not-found
+
+          # Substitute the registry name into the job manifest
+          sed "s/YOUR_REGISTRY/${{ secrets.REGISTRY_NAME }}/g" k8s/migrate-job.yaml \
+            | kubectl apply -f -
+
+          # Wait up to 3 minutes for completion
+          kubectl wait --for=condition=complete job/minidm-migrate --timeout=180s
+
+      - name: Print migration logs
+        if: always()
+        run: kubectl logs -l job-name=minidm-migrate --tail=100

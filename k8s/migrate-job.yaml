@@ -1,0 +1,34 @@
+# Run DB migrations as a one-off Kubernetes Job.
+#
+# The deploy workflow applies this via:
+#   kubectl delete job minidm-migrate --ignore-not-found
+#   sed "s/YOUR_REGISTRY/$REGISTRY_NAME/g" k8s/migrate-job.yaml | kubectl apply -f -
+#   kubectl wait --for=condition=complete job/minidm-migrate --timeout=120s
+#
+# Or trigger the "Migrate" GitHub Actions workflow manually from the Actions tab.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minidm-migrate
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: registry.digitalocean.com/YOUR_REGISTRY/minidm-migrate:latest
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: minidm-secrets
+                  key: database-url
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"

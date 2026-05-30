@@ -24,3 +24,11 @@ COPY --from=backend-build /minIDM .
 COPY --from=backend-build /migrate .
 EXPOSE 8080
 ENTRYPOINT ["/app/minIDM"]
+
+# Migrator Stage — includes goose CLI + SQL migration files.
+# Built and pushed separately as minidm-migrate:latest.
+# Used by k8s/migrate-job.yaml; never deployed as the app.
+FROM golang:1.26-alpine AS migrator
+RUN go install github.com/pressly/goose/v3/cmd/goose@latest
+COPY services/api/db/migrations /migrations
+CMD ["sh", "-c", "goose -dir /migrations postgres \"$DATABASE_URL\" up"]
