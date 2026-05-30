@@ -2,8 +2,6 @@ package identity
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	db "minIDM/db/sqlc"
 
@@ -23,10 +21,11 @@ type RevokeIdentitySessionCommand struct {
 	Handle     string
 }
 
-// sessionHandle returns the first 8 hex chars of SHA-256(token) — safe to expose as an opaque ID.
-func sessionHandle(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])[:8]
+// sessionHandle returns the first 8 hex chars of the stored token_hash.
+// The DB stores hex(SHA-256(token)), so this is prefix-safe and collision-resistant
+// for any realistic number of concurrent sessions per identity.
+func sessionHandle(tokenHash string) string {
+	return tokenHash[:8]
 }
 
 func (h *RevokeIdentitySessionHandler) Handle(ctx context.Context, cmd RevokeIdentitySessionCommand) error {
@@ -35,8 +34,8 @@ func (h *RevokeIdentitySessionHandler) Handle(ctx context.Context, cmd RevokeIde
 		return err
 	}
 	for _, s := range sessions {
-		if sessionHandle(s.Token) == cmd.Handle {
-			return h.q.DeleteSession(ctx, s.Token)
+		if sessionHandle(s.TokenHash) == cmd.Handle {
+			return h.q.DeleteSession(ctx, s.TokenHash)
 		}
 	}
 	return fmt.Errorf("session not found")
