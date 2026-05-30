@@ -56,18 +56,18 @@ type Oauth2AuthorizationCode struct {
 }
 
 type Oauth2Client struct {
-	ID               pgtype.UUID        `json:"id"`
-	ClientID         string             `json:"client_id"`
-	ClientSecretHash pgtype.Text        `json:"client_secret_hash"`
-	Name             string             `json:"name"`
-	Description      pgtype.Text        `json:"description"`
-	RedirectUris     []string           `json:"redirect_uris"`
-	Scopes           []string           `json:"scopes"`
-	IsEnabled        bool               `json:"is_enabled"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
-	AutoConsent      bool               `json:"auto_consent"`
-	AllowRegistration bool              `json:"allow_registration"`
+	ID                pgtype.UUID        `json:"id"`
+	ClientID          string             `json:"client_id"`
+	ClientSecretHash  pgtype.Text        `json:"client_secret_hash"`
+	Name              string             `json:"name"`
+	Description       pgtype.Text        `json:"description"`
+	RedirectUris      []string           `json:"redirect_uris"`
+	Scopes            []string           `json:"scopes"`
+	IsEnabled         bool               `json:"is_enabled"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	AutoConsent       bool               `json:"auto_consent"`
+	AllowRegistration bool               `json:"allow_registration"`
 }
 
 type Oauth2Token struct {

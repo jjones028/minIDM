@@ -36,7 +36,12 @@ type CreateIdentityParams struct {
 }
 
 func (q *Queries) CreateIdentity(ctx context.Context, arg CreateIdentityParams) (Identity, error) {
-	row := q.db.QueryRow(ctx, createIdentity, arg.SubjectID, arg.Email, arg.PwHash, arg.IsEnabled)
+	row := q.db.QueryRow(ctx, createIdentity,
+		arg.SubjectID,
+		arg.Email,
+		arg.PwHash,
+		arg.IsEnabled,
+	)
 	var i Identity
 	err := row.Scan(
 		&i.ID,
