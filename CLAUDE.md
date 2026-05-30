@@ -13,7 +13,7 @@
 - **Dev Proxy**: In development, Vite proxies `/api` → `http://localhost:8080`, making all requests same-origin so cookies work without CORS changes.
 - **CQRS Pattern**: Each feature has `handler.go` (HTTP wiring + JSON) + per-command/query files. Business rules live in command handlers, never in HTTP handlers.
 
-## Current State (as of 2026-05-19)
+## Current State (as of 2026-05-30)
 
 ### Completed
 - **Identity registration & listing** — full CQRS-based flow with Argon2id password hashing.
@@ -452,6 +452,34 @@ REDIRECT_URI=http://localhost:3000/callback
 PORT=3000
 ```
 
+### Security Hardening — Critical Fixes (completed 2026-05-30)
+
+#### Session token hashing (migration `016`)
+`sessions.token` was stored as plaintext — a DB breach would have exposed every live session. Fixed in migration `016_hash_session_tokens.sql`:
+- `ALTER TABLE sessions RENAME COLUMN token TO token_hash` — self-documenting schema
+- `014_hash_session_tokens.sql` (remote, runs first) truncates all pre-existing plaintext sessions
+- `login.go` stores `SHA-256(token)` via `hashSessionToken()`; cookie still carries plaintext
+- `logout.go` and `rbac/middleware.go` hash the cookie value before every DB lookup/delete
+- `identity/revoke_identity_session.go`: `sessionHandle()` simplified — stored value is the full 64-char hex SHA-256, so handle = `tokenHash[:8]` (no re-hash needed)
+- sqlc regenerated: `Session.Token` → `Session.TokenHash`, `CreateSessionParams.Token` → `CreateSessionParams.TokenHash`
+
+#### Disabled identity enforcement
+Disabled accounts could previously log in and exchange OAuth2 tokens:
+- `session/login.go` — returns `ErrAccountNotActive` (→ 403 `account_not_active`) before password verification
+- `oauth2/token.go` — checks `identity.IsEnabled` in both `authorization_code` and `refresh_token` grant handlers; returns `access_denied 403`
+- `oauth2/userinfo.go` — checks `identity.IsEnabled`; returns `invalid_token 401`
+- `rbac/middleware.go` — `Authenticate` fetches the identity after session lookup and returns 401 if disabled
+
+#### DOKS deployment
+- `k8s/deployment.yaml` — Deployment + Service, Postgres StatefulSet, Traefik IngressRoutes (HTTP→HTTPS + TLS)
+- `k8s/migrate-job.yaml` — one-off goose migration Job (triggered via GitHub Actions `migrate.yml`)
+- `k8s/secrets.example.sh`, `k8s/traefik-values.yaml` — cluster setup helpers
+- `Dockerfile` — `migrator` stage (goose + migration files) pushed as `minidm-migrate:latest`
+- `.github/workflows/ci.yml` — PR type-check + build
+- `.github/workflows/deploy.yml` — push-to-main: build both images, kubectl rollout, auto-rollback on failure
+- `.github/workflows/migrate.yml` — manual `workflow_dispatch` to apply migration Job and stream logs
+- `DEPLOY.md` — step-by-step DOKS setup guide
+
 ## Next Steps for the Next AI
 
 ### Features
@@ -459,9 +487,6 @@ PORT=3000
 2. **Refresh token revocation in user-facing UI** — users can see and revoke their own active sessions from a "My Account" page (currently only admins can do this for other identities).
 3. **Dynamic client registration** (RFC 7591) — allow clients to self-register rather than requiring admin creation.
 4. **Scope-based consent** — currently consent grants all client scopes; could show per-scope checkboxes and issue codes only for approved scopes.
-5. **Client secret rotation**: `POST /api/oauth2/clients/{id}/rotate-secret` — re-generate, re-hash, return once. Does not affect active tokens (those use JWTs verified by the key, not the secret).
-6. **Token introspection** (RFC 7662): `POST /oauth2/introspect` — lets resource servers validate an access token without parsing JWTs themselves. Useful for non-JWT-aware services.
-7. **Token revocation** (RFC 7009): `POST /oauth2/revoke` — lets clients explicitly invalidate a refresh or access token.
 
 ### Security Hardening (remaining — do these before shipping to production)
 
