@@ -1,0 +1,66 @@
+# Builds minIDM on every push to main, pushes to DO Container Registry,
+# and rolls out the updated deployment on DOKS.
+#
+# Required GitHub secrets:
+#   DIGITALOCEAN_ACCESS_TOKEN  — DO personal access token
+#   REGISTRY_NAME              — DO container registry name (e.g. "minidm-registry")
+#   CLUSTER_NAME               — DOKS cluster name (e.g. "minidm-cluster")
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Build, push, rollout
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Log in to DO Container Registry
+        run: doctl registry login --expiry-seconds 1200
+
+      - name: Set image base
+        id: tag
+        run: echo "BASE=registry.digitalocean.com/${{ secrets.REGISTRY_NAME }}" >> $GITHUB_OUTPUT
+
+      - name: Build and push app image
+        run: |
+          docker build \
+            -t ${{ steps.tag.outputs.BASE }}/minidm:${{ github.sha }} \
+            -t ${{ steps.tag.outputs.BASE }}/minidm:latest \
+            .
+          docker push ${{ steps.tag.outputs.BASE }}/minidm:${{ github.sha }}
+          docker push ${{ steps.tag.outputs.BASE }}/minidm:latest
+
+      - name: Build and push migrator image
+        run: |
+          docker build \
+            --target migrator \
+            -t ${{ steps.tag.outputs.BASE }}/minidm-migrate:${{ github.sha }} \
+            -t ${{ steps.tag.outputs.BASE }}/minidm-migrate:latest \
+            .
+          docker push ${{ steps.tag.outputs.BASE }}/minidm-migrate:${{ github.sha }}
+          docker push ${{ steps.tag.outputs.BASE }}/minidm-migrate:latest
+
+      - name: Update kubeconfig
+        run: doctl kubernetes cluster kubeconfig save ${{ secrets.CLUSTER_NAME }}
+
+      - name: Deploy to cluster
+        run: |
+          IMAGE=${{ steps.tag.outputs.BASE }}/minidm:${{ github.sha }}
+          kubectl set image deployment/minidm minidm=$IMAGE
+          kubectl rollout status deployment/minidm --timeout=120s
+
+      - name: Rollback on failure
+        if: failure()
+        run: kubectl rollout undo deployment/minidm

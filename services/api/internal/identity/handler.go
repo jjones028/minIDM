@@ -114,7 +114,7 @@ func (a *API) ListSessions(w http.ResponseWriter, r *http.Request) {
 	result := make([]sessionInfo, len(sessions))
 	for i, s := range sessions {
 		result[i] = sessionInfo{
-			Handle:    sessionHandle(s.Token),
+			Handle:    sessionHandle(s.TokenHash),
 			CreatedAt: s.CreatedAt,
 			ExpiresAt: s.ExpiresAt,
 		}

@@ -10,6 +10,11 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+func hashSessionToken(token string) string {
+	h := sha256.Sum256([]byte(token))
+	return fmt.Sprintf("%x", h[:])
+}
+
 const sessionCookie = "session"
 
 type contextKey string
@@ -30,8 +35,7 @@ func Authenticate(queries *db.Queries) func(http.Handler) http.Handler {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
-			h := sha256.Sum256([]byte(cookie.Value))
-			session, err := queries.GetSessionByToken(r.Context(), fmt.Sprintf("%x", h[:]))
+			session, err := queries.GetSessionByToken(r.Context(), hashSessionToken(cookie.Value))
 			if err != nil {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
@@ -69,4 +73,3 @@ func Require(resource, action string, queries *db.Queries) func(http.Handler) ht
 		})
 	}
 }
-

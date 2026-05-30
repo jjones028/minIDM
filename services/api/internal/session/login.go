@@ -63,7 +63,7 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (*LoginResu
 
 	expiresAt := time.Now().Add(sessionDuration)
 	_, err = h.q.CreateSession(ctx, db.CreateSessionParams{
-		Token:      hashSessionToken(token),
+		TokenHash:  hashSessionToken(token),
 		IdentityID: ident.ID,
 		ExpiresAt:  pgtype.Timestamptz{Time: expiresAt, Valid: true},
 	})

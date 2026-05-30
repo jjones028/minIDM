@@ -107,7 +107,7 @@ type Role struct {
 }
 
 type Session struct {
-	Token      string             `json:"token"`
+	TokenHash  string             `json:"token_hash"`
 	IdentityID pgtype.UUID        `json:"identity_id"`
 	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`

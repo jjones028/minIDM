@@ -453,10 +453,49 @@ PORT=3000
 ```
 
 ## Next Steps for the Next AI
+
+### Features
 1. **Self-service password reset** — email-based reset link flow (requires email delivery). Currently only admins can reset passwords via `POST /api/identities/{id}/reset-password`.
 2. **Refresh token revocation in user-facing UI** — users can see and revoke their own active sessions from a "My Account" page (currently only admins can do this for other identities).
 3. **Dynamic client registration** (RFC 7591) — allow clients to self-register rather than requiring admin creation.
 4. **Scope-based consent** — currently consent grants all client scopes; could show per-scope checkboxes and issue codes only for approved scopes.
+5. **Client secret rotation**: `POST /api/oauth2/clients/{id}/rotate-secret` — re-generate, re-hash, return once. Does not affect active tokens (those use JWTs verified by the key, not the secret).
+6. **Token introspection** (RFC 7662): `POST /oauth2/introspect` — lets resource servers validate an access token without parsing JWTs themselves. Useful for non-JWT-aware services.
+7. **Token revocation** (RFC 7009): `POST /oauth2/revoke` — lets clients explicitly invalidate a refresh or access token.
+
+### Security Hardening (remaining — do these before shipping to production)
+
+#### High — missing security controls
+
+8. **Rate limiting on authentication endpoints**: `POST /api/login`, `POST /api/register`, and `POST /oauth2/token` have no rate limiting — all three are brute-forceable. Use `golang.org/x/time/rate` to apply per-IP token-bucket limiting in `session/handler.go` and `oauth2/handler.go`. Suggested limits: login 5 req/min, register 3 req/min, token 10 req/min. Return `429 Too Many Requests` with `Retry-After`.
+
+9. **Gate open registration** (`internal/identity/handler.go:Register`): `POST /api/register` is a fully public endpoint — anyone can self-register and becomes `viewer`. For a production IDM this is almost always wrong. Implement an admin-issued invitation flow: admin calls `POST /api/invitations` → gets a short-lived signed token → invitee POSTs to `/api/register` with the token. Alternatively, add a `REGISTRATION_ENABLED` env var (default `false`) that must be explicitly set to allow open registration.
+
+10. **Add security response headers** (`internal/app/router.go`): The server emits no security headers. Add a `securityHeadersMiddleware` in `router.go` (applied before `corsMiddleware`) that sets:
+    - `X-Content-Type-Options: nosniff`
+    - `X-Frame-Options: DENY`
+    - `Referrer-Policy: strict-origin-when-cross-origin`
+    - `Permissions-Policy: geolocation=(), camera=(), microphone=()`
+    - `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'` (tighten after verifying no inline scripts)
+    - `Strict-Transport-Security: max-age=63072000; includeSubDomains` (only when `SECURE_COOKIES=true`)
+
+11. **Lock down CORS** (`internal/app/router.go:corsMiddleware`): `Access-Control-Allow-Origin: *` is hardcoded. Add an `ALLOWED_ORIGINS` env var (comma-separated). In `corsMiddleware`, reflect the request `Origin` header only if it appears in the allowlist, otherwise omit the CORS header entirely. The wildcard prevents cookies from being sent cross-origin anyway (browser blocks it), but locking it down is defense in depth and required for `credentials: 'include'` flows.
+
+#### Medium — hardening improvements
+
+12. **Password max-length guard** (`internal/identity/handler.go:Register`): The only password check is `len(req.Password) < 8`. Argon2id has no input length limit — a request with a 1 MB password string will consume significant CPU. Add `if len(req.Password) > 128 { http.Error(..., 422) }` before the `< 8` check. 128 chars is a reasonable upper bound for any legitimate user.
+
+13. **Scope re-validation on refresh token grant** (`internal/oauth2/token.go:handleRefreshToken`): When a refresh token is exchanged, `stored.Scopes` are carried forward to the new access token without checking whether the client still has those scopes. If an admin narrows a client's `scopes` after token issuance, old refresh tokens continue producing over-privileged access tokens until they expire (30 days). Fix: after fetching the stored token, intersect `stored.Scopes` with `client.Scopes` and use the intersection for the new token.
+
+14. **Track failed login attempts / account lockout** (`internal/session/login.go`): There is no mechanism to detect or respond to credential-stuffing. Add a `login_attempts` table (`identity_id`, `attempted_at`, `success BOOL`) and lock the account (or impose a delay) after N failures within a window. Alternatively, use an in-memory per-email token bucket as a simpler first step. Log failures to the audit log under a new `session.login_failed` action.
+
+#### Low — compliance and operational
+
+15. **Audit log stderr fallback** (`internal/audit/auditor.go`): `_ = a.q.CreateAuditLog(...)` silently drops all write failures. For a compliance-critical IDM, at minimum log failures to `log.Printf("audit: failed to write event: %v", err)` so they appear in container logs.
+
+16. **PII in audit log details**: `session.login` logs `{"email": req.Email}` and `identity.register` logs the same. Under GDPR/CCPA the email address in an audit detail field requires the same retention controls as the identity itself. Consider logging only the identity UUID and omitting the email from `details`, since the email is already recoverable from the identity record.
+
+17. **`state` parameter enforcement in authorize flow** (`internal/oauth2/authorize.go`): `state` is read but not required. OIDC clients that omit `state` lose their CSRF protection for the redirect. Log a warning, or (better) return `invalid_request` if `state` is absent, to enforce best practice for all downstream clients.
 
 ## CQRS Pattern (for new features)
 Every new feature should follow this shape:

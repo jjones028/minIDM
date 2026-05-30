@@ -1,0 +1,15 @@
+# Helm values for Traefik ingress controller — installed once per cluster.
+# Install: helm install traefik traefik/traefik -n traefik --create-namespace -f k8s/traefik-values.yaml
+# Upgrade:  helm upgrade traefik traefik/traefik -n traefik -f k8s/traefik-values.yaml
+
+persistence:
+  enabled: true
+  size: 128Mi
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: you@yourdomain.com    # ← your email (Let's Encrypt expiry notices)
+      storage: /data/acme.json
+      httpChallenge:
+        entryPoint: web
