@@ -310,25 +310,9 @@ The cluster pulls from the in-cluster registry via its ClusterIP service (no ima
 
 ## 3. Bootstrap the Cluster
 
-Cluster-level setup (DOKS provisioning, Traefik, CloudNativePG) is managed in the [doks-infra](https://github.com/jjones028/doks-infra) repo. Complete those steps before continuing here. The short version:
+Before deploying minIDM, complete the cluster setup in the [doks-infra](https://github.com/jjones028/doks-infra) repo. That covers DOKS cluster provisioning, Traefik, and CloudNativePG. Come back here once `task bootstrap` has run successfully and your DNS A record for `auth.yourdomain.com` points at the Traefik load balancer IP.
 
-```bash
-# In the doks-infra repo
-doctl kubernetes cluster create minidm-cluster \
-  --region nyc3 \
-  --node-pool "name=default;size=s-2vcpu-4gb;count=2"
-doctl kubernetes cluster kubeconfig save minidm-cluster
-
-task bootstrap   # installs Traefik + CloudNativePG via Helm
-```
-
-Point a DNS A record (`auth.yourdomain.com`) at the Traefik load balancer IP:
-
-```bash
-kubectl get svc -n traefik traefik
-```
-
-Allow the cluster to pull from the DO Container Registry (skip if using in-cluster registry):
+Allow the cluster to pull from the DO Container Registry (skip if using an in-cluster registry):
 
 ```bash
 doctl registry kubernetes-manifest | kubectl apply -f -
