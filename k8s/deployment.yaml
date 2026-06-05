@@ -26,6 +26,8 @@ spec:
       labels:
         app: minidm
     spec:
+      imagePullSecrets:
+        - name: registry-credentials
       volumes:
         - name: oauth2-key
           secret:
@@ -33,7 +35,7 @@ spec:
 
       containers:
         - name: minidm
-          image: registry.digitalocean.com/YOUR_REGISTRY/minidm:latest
+          image: registry.jjones.dev/minidm:latest
           ports:
             - containerPort: 8080
           env:
@@ -164,7 +166,7 @@ spec:
   entryPoints:
     - web
   routes:
-    - match: Host(`auth.yourdomain.com`)
+    - match: Host(`auth.jjones.dev`)
       kind: Rule
       middlewares:
         - name: redirect-https
@@ -182,7 +184,7 @@ spec:
   entryPoints:
     - websecure
   routes:
-    - match: Host(`auth.yourdomain.com`)
+    - match: Host(`auth.jjones.dev`)
       kind: Rule
       services:
         - name: minidm

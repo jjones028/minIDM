@@ -2,7 +2,7 @@
 # Trigger this from the Actions tab after any deploy that adds new migrations.
 #
 # Required GitHub secrets (same as deploy.yml):
-#   DIGITALOCEAN_ACCESS_TOKEN, REGISTRY_NAME, CLUSTER_NAME
+#   DIGITALOCEAN_ACCESS_TOKEN, CLUSTER_NAME
 
 name: Migrate
 
@@ -28,14 +28,8 @@ jobs:
 
       - name: Run migration job
         run: |
-          # Delete previous job run if it exists
           kubectl delete job minidm-migrate --ignore-not-found
-
-          # Substitute the registry name into the job manifest
-          sed "s/YOUR_REGISTRY/${{ secrets.REGISTRY_NAME }}/g" k8s/migrate-job.yaml \
-            | kubectl apply -f -
-
-          # Wait up to 3 minutes for completion
+          kubectl apply -f k8s/migrate-job.yaml
           kubectl wait --for=condition=complete job/minidm-migrate --timeout=180s
 
       - name: Print migration logs

@@ -13,7 +13,7 @@ A self-hosted Identity Management system and OAuth2/OIDC provider built with Go 
 - **Consent screen** — explicit per-authorization consent with optional per-client auto-consent
 - **Audit log** — filterable, paginated audit trail with actor email for all administrative actions
 - **Admin portal** — full React UI for managing identities, roles, OAuth2 clients, tokens, and audit logs
-- **Production-ready** — Docker Compose deployment with health-checked migrations and persistent key storage
+- **Production-ready** — Docker Compose for local testing; DOKS deployment with in-cluster registry, health-checked migrations, and persistent key storage
 
 ## Tech Stack
 
@@ -53,6 +53,15 @@ docker compose up -d
 
 The app is available at `http://localhost:8080`. Set `SECURE_COOKIES=true` and update `OAUTH2_ISSUER` to your public URL before deploying to production.
 
+### Production (DOKS)
+
+See [DEPLOY.md](./DEPLOY.md) for the full step-by-step guide. The short version:
+
+1. Bootstrap the cluster and in-cluster registry using [doks-infra](https://github.com/jjones028/doks-infra)
+2. Create a `registry-credentials` pull secret in the cluster
+3. Apply `k8s/deployment.yaml`, run the migrate job, then bootstrap the first admin
+4. Add `DIGITALOCEAN_ACCESS_TOKEN`, `CLUSTER_NAME`, `REGISTRY_HOST`, `REGISTRY_USERNAME`, and `REGISTRY_PASSWORD` to GitHub Actions secrets — pushes to `main` deploy automatically
+
 ### Environment Variables
 
 | Variable | Default | Purpose |
@@ -78,7 +87,7 @@ services/api/
     oauth2/       ← full OAuth2/OIDC provider
     audit/        ← audit log write + query
   db/
-    migrations/   ← goose SQL migrations (001–013)
+    migrations/   ← goose SQL migrations
     queries/      ← sqlc query sources
     sqlc/         ← generated Go code (never edit)
 

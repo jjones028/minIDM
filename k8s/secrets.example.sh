@@ -11,7 +11,7 @@ openssl genrsa -out oauth2_signing.key 2048
 
 # ── 2. Application secrets ────────────────────────────────────────────────────
 kubectl create secret generic minidm-secrets \
-  --from-literal=oauth2-issuer='https://auth.yourdomain.com'
+  --from-literal=oauth2-issuer='https://auth.jjones.dev'
 
 # ── 3. OAuth2 RSA signing key ─────────────────────────────────────────────────
 kubectl create secret generic minidm-oauth2-key \
