@@ -3,7 +3,7 @@
 ## Overview
 
 The deployment uses:
-- A **DO Container Registry** to store the app and migrator images
+- An **in-cluster container registry** (from [doks-infra](https://github.com/jjones028/doks-infra)) to store the app and migrator images
 - A **DOKS cluster** running the app
 - **CloudNativePG (CNPG)** as the PostgreSQL operator — managed cluster with optional Spaces backup
 - **Traefik** as the ingress controller with automatic Let's Encrypt TLS
@@ -22,30 +22,21 @@ doctl auth init   # paste your DO personal access token
 
 ---
 
-## 2. Create a Container Registry
+## 2. Bootstrap the Cluster and Registry
 
-```bash
-doctl registry create minidm-registry --subscription-tier starter
-```
-
-Note the registry name — you'll use it as the `REGISTRY_NAME` secret.
+Before deploying minIDM, complete the cluster setup in the [doks-infra](https://github.com/jjones028/doks-infra) repo. That covers DOKS cluster provisioning, Traefik, CloudNativePG, and the in-cluster container registry (`task bootstrap` + `task registry`). Come back here once everything is running and your DNS A records for `auth.yourdomain.com` and `registry.yourdomain.com` point at the Traefik load balancer IP.
 
 ---
 
-## 2b. Alternative: In-Cluster Container Registry
+## 3. Create the Registry Pull Secret
 
-See the [doks-infra](https://github.com/jjones028/doks-infra) repo — `registry/registry.yaml` has a ready-to-apply manifest with both PVC (block storage) and Spaces-backed options, and `task registry` deploys it.
-
----
-
-## 3. Bootstrap the Cluster
-
-Before deploying minIDM, complete the cluster setup in the [doks-infra](https://github.com/jjones028/doks-infra) repo. That covers DOKS cluster provisioning, Traefik, and CloudNativePG. Come back here once `task bootstrap` has run successfully and your DNS A record for `auth.yourdomain.com` points at the Traefik load balancer IP.
-
-Allow the cluster to pull from the DO Container Registry (skip if using an in-cluster registry):
+The in-cluster registry uses htpasswd authentication. Create a pull secret so Kubernetes can pull images:
 
 ```bash
-doctl registry kubernetes-manifest | kubectl apply -f -
+kubectl create secret docker-registry registry-credentials \
+  --docker-server=registry.yourdomain.com \
+  --docker-username=<htpasswd-username> \
+  --docker-password=<htpasswd-password>
 ```
 
 ---
@@ -53,7 +44,6 @@ doctl registry kubernetes-manifest | kubectl apply -f -
 ## 5. Configure Manifests
 
 In `k8s/deployment.yaml`, replace every occurrence of:
-- `YOUR_REGISTRY` → your DO container registry name (or `registry.yourdomain.com` if using in-cluster registry)
 - `auth.yourdomain.com` → your actual domain
 
 If using Spaces backup, also replace:
@@ -73,7 +63,7 @@ bash k8s/secrets.example.sh
 
 > **Keep `oauth2_signing.key` backed up.** Losing it invalidates all active JWTs.
 
-`minidm-secrets` now only needs `oauth2-issuer` — the `database-url` / `db-password` keys are no longer required. CloudNativePG generates the `minidm-pg-app` secret automatically with a `uri` key that the app reads directly.
+`minidm-secrets` only needs `oauth2-issuer` — CloudNativePG generates the `minidm-pg-app` secret automatically with a `uri` key that the app reads directly.
 
 ---
 
@@ -103,7 +93,7 @@ Go to **Actions → Migrate → Run workflow** in your GitHub repo.
 
 ```bash
 kubectl delete job minidm-migrate --ignore-not-found
-sed "s/YOUR_REGISTRY/your-registry-name/g" k8s/migrate-job.yaml | kubectl apply -f -
+kubectl apply -f k8s/migrate-job.yaml
 kubectl wait --for=condition=complete job/minidm-migrate --timeout=180s
 kubectl logs -l job-name=minidm-migrate
 ```
@@ -136,9 +126,11 @@ Add these secrets to your GitHub repo (**Settings → Secrets and variables → 
 
 | Secret | Value |
 |--------|-------|
-| `DIGITALOCEAN_ACCESS_TOKEN` | DO personal access token |
-| `REGISTRY_NAME` | Container registry name (e.g. `minidm-registry`) |
+| `DIGITALOCEAN_ACCESS_TOKEN` | DO personal access token (for kubeconfig) |
 | `CLUSTER_NAME` | DOKS cluster name (e.g. `minidm-cluster`) |
+| `REGISTRY_HOST` | Registry hostname (e.g. `registry.jjones.dev`) |
+| `REGISTRY_USERNAME` | htpasswd username |
+| `REGISTRY_PASSWORD` | htpasswd password |
 
 Push to `main` — the **Deploy** workflow builds both images and rolls out the new version. Rollback is automatic if the rollout times out.
 

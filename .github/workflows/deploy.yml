@@ -1,10 +1,12 @@
-# Builds minIDM on every push to main, pushes to DO Container Registry,
+# Builds minIDM on every push to main, pushes to the in-cluster container registry,
 # and rolls out the updated deployment on DOKS.
 #
 # Required GitHub secrets:
-#   DIGITALOCEAN_ACCESS_TOKEN  — DO personal access token
-#   REGISTRY_NAME              — DO container registry name (e.g. "minidm-registry")
+#   DIGITALOCEAN_ACCESS_TOKEN  — DO personal access token (for kubeconfig)
 #   CLUSTER_NAME               — DOKS cluster name (e.g. "minidm-cluster")
+#   REGISTRY_HOST              — in-cluster registry hostname (e.g. "registry.jjones.dev")
+#   REGISTRY_USERNAME          — htpasswd registry username
+#   REGISTRY_PASSWORD          — htpasswd registry password
 
 name: Deploy
 
@@ -21,43 +23,43 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install doctl
-        uses: digitalocean/action-doctl@v2
+      - name: Log in to registry
+        uses: docker/login-action@v3
         with:
-          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-
-      - name: Log in to DO Container Registry
-        run: doctl registry login --expiry-seconds 1200
-
-      - name: Set image base
-        id: tag
-        run: echo "BASE=registry.digitalocean.com/${{ secrets.REGISTRY_NAME }}" >> $GITHUB_OUTPUT
+          registry: ${{ secrets.REGISTRY_HOST }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
 
       - name: Build and push app image
         run: |
           docker build \
-            -t ${{ steps.tag.outputs.BASE }}/minidm:${{ github.sha }} \
-            -t ${{ steps.tag.outputs.BASE }}/minidm:latest \
+            -t ${{ secrets.REGISTRY_HOST }}/minidm:${{ github.sha }} \
+            -t ${{ secrets.REGISTRY_HOST }}/minidm:latest \
             .
-          docker push ${{ steps.tag.outputs.BASE }}/minidm:${{ github.sha }}
-          docker push ${{ steps.tag.outputs.BASE }}/minidm:latest
+          docker push ${{ secrets.REGISTRY_HOST }}/minidm:${{ github.sha }}
+          docker push ${{ secrets.REGISTRY_HOST }}/minidm:latest
 
       - name: Build and push migrator image
         run: |
           docker build \
             --target migrator \
-            -t ${{ steps.tag.outputs.BASE }}/minidm-migrate:${{ github.sha }} \
-            -t ${{ steps.tag.outputs.BASE }}/minidm-migrate:latest \
+            -t ${{ secrets.REGISTRY_HOST }}/minidm-migrate:${{ github.sha }} \
+            -t ${{ secrets.REGISTRY_HOST }}/minidm-migrate:latest \
             .
-          docker push ${{ steps.tag.outputs.BASE }}/minidm-migrate:${{ github.sha }}
-          docker push ${{ steps.tag.outputs.BASE }}/minidm-migrate:latest
+          docker push ${{ secrets.REGISTRY_HOST }}/minidm-migrate:${{ github.sha }}
+          docker push ${{ secrets.REGISTRY_HOST }}/minidm-migrate:latest
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       - name: Update kubeconfig
         run: doctl kubernetes cluster kubeconfig save ${{ secrets.CLUSTER_NAME }}
 
       - name: Deploy to cluster
         run: |
-          IMAGE=${{ steps.tag.outputs.BASE }}/minidm:${{ github.sha }}
+          IMAGE=${{ secrets.REGISTRY_HOST }}/minidm:${{ github.sha }}
           kubectl set image deployment/minidm minidm=$IMAGE
           kubectl rollout status deployment/minidm --timeout=120s
 
