@@ -50,6 +50,9 @@ jobs:
           go-version-file: services/api/go.mod
           cache-dependency-path: services/api/go.sum
 
+      - name: Create stub frontend dist
+        run: mkdir -p services/api/internal/app/dist && touch services/api/internal/app/dist/index.html
+
       - name: Build
         working-directory: services/api
         run: CGO_ENABLED=0 go build ./...
