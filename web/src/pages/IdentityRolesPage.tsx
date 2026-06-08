@@ -134,9 +134,14 @@ export default function IdentityRolesPage() {
             <CardContent>
               <div className="flex gap-3 items-center">
                 <div className="relative w-full">
-                  <Select value={selectedRoleId || undefined} onValueChange={setSelectedRoleId}>
+                  <Select value={selectedRoleId || null} onValueChange={(v) => setSelectedRoleId((v as string) ?? '')}>
                     <SelectTrigger className="h-9 w-full text-sm">
-                      <SelectValue placeholder="Select a role…" />
+                      <SelectValue>
+                        {(value: unknown) => {
+                          if (!value) return 'Select a role…';
+                          return availableRoles.find(r => r.id === (value as string))?.name ?? 'Select a role…';
+                        }}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent position="popper">
                       {availableRoles.map(r => (

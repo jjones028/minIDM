@@ -13,6 +13,9 @@ import {
 } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import { AppNav } from '@/components/app-nav';
 
 // --- JSON syntax highlighter ---
@@ -237,16 +240,21 @@ export default function AuditLogsPage() {
             <form onSubmit={handleApply} className="flex flex-wrap gap-2 items-end">
               <div className="flex flex-col gap-1">
                 <label className="text-xs text-muted-foreground">Resource type</label>
-                <select
-                  value={resourceType}
-                  onChange={e => setResourceType(e.target.value)}
-                  className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                <Select
+                  value={resourceType || null}
+                  onValueChange={(v) => setResourceType((v as string) ?? '')}
                 >
-                  <option value="">All</option>
-                  {resourceTypes.map(rt => (
-                    <option key={rt} value={rt}>{rt}</option>
-                  ))}
-                </select>
+                  <SelectTrigger className="h-9 text-sm">
+                    <SelectValue>
+                      {(value: unknown) => (value as string) || 'All'}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent position="popper">
+                    {resourceTypes.map(rt => (
+                      <SelectItem key={rt} value={rt}>{rt}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="flex flex-col gap-1">
