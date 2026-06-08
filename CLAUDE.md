@@ -3,7 +3,7 @@
 ## Stack Summary
 - **Languages**: Go (Backend), TypeScript (Frontend).
 - **Database**: PostgreSQL (Migrations via `goose` in `services/api/db/migrations`).
-- **UI**: Tailwind v4 + Shadcn/ui. Style is `radix-mira` with OKLCH colors.
+- **UI**: Tailwind v4 + Base UI (`@base-ui/react`). Component styles follow the `radix-mira` Shadcn/ui theme with OKLCH colors. Do **not** use `npx shadcn add` — it generates Radix-based components. Write new UI primitives manually using `@base-ui/react` (see `web/src/components/ui/` for examples).
 - **Build**: `task` (Go-Task). Run `task --list` for available commands.
 
 ## Architecture

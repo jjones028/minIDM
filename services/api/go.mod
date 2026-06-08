@@ -6,6 +6,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.2
+	github.com/pressly/goose/v3 v3.27.1
 	github.com/testcontainers/testcontainers-go v0.42.0
 	github.com/testcontainers/testcontainers-go/modules/compose v0.42.0
 	golang.org/x/crypto v0.50.0
@@ -99,7 +100,6 @@ require (
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
-	github.com/pressly/goose/v3 v3.27.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.1 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.10.0 // indirect

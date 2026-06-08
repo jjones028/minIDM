@@ -20,7 +20,7 @@ A self-hosted Identity Management system and OAuth2/OIDC provider built with Go 
 | Layer | Technology |
 |-------|-----------|
 | Backend | Go 1.26+, `pgxpool/v5`, `sqlc`, `goose`, `golang-jwt/jwt` |
-| Frontend | React 19, Vite, Tailwind CSS v4, Shadcn/ui (`radix-mira`) |
+| Frontend | React 19, Vite, Tailwind CSS v4, Base UI (`@base-ui/react`) |
 | Database | PostgreSQL |
 | Build | [go-task](https://taskfile.dev/) |
 
