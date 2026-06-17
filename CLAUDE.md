@@ -13,7 +13,7 @@
 - **Dev Proxy**: In development, Vite proxies `/api` → `http://localhost:8080`, making all requests same-origin so cookies work without CORS changes.
 - **CQRS Pattern**: Each feature has `handler.go` (HTTP wiring + JSON) + per-command/query files. Business rules live in command handlers, never in HTTP handlers.
 
-## Current State (as of 2026-05-30)
+## Current State (as of 2026-06-17)
 
 ### Completed
 - **Identity registration & listing** — full CQRS-based flow with Argon2id password hashing.
@@ -479,6 +479,58 @@ Disabled accounts could previously log in and exchange OAuth2 tokens:
 - `.github/workflows/deploy.yml` — push-to-main: build both images, kubectl rollout, auto-rollback on failure
 - `.github/workflows/migrate.yml` — manual `workflow_dispatch` to apply migration Job and stream logs
 - `DEPLOY.md` — step-by-step DOKS setup guide
+
+### Per-Client OAuth2 Roles & Groups (completed 2026-06-17)
+Per-client flat roles and flat groups as an assignment mechanism. Roles are emitted as a `roles` JWT claim in issued access/ID tokens.
+
+#### Design Decisions
+- **Flat roles** — no role hierarchy. Each client defines its own named roles (`oauth2_client_roles`).
+- **Flat groups** — assignment mechanism only, no nesting. Groups assign multiple identities to multiple roles in bulk (`oauth2_client_groups`, `client_group_roles`).
+- **`roles` claim** — always included in the token when non-empty; no scope gate (matches Azure AD / Keycloak defaults). Absence of roles = claim omitted.
+- **Effective roles** = direct assignments UNION via-group assignments (`GetEffectiveClientRolesForIdentity` SQL query using `DISTINCT … UNION`).
+
+#### DB Migration
+`017_client_roles_groups.sql` — five tables: `oauth2_client_roles`, `identity_client_roles`, `oauth2_client_groups`, `identity_client_groups`, `client_group_roles`.
+
+#### sqlc Note
+`GetEffectiveClientRolesForIdentity` uses `$1::uuid` / `$2::uuid` casts, which sqlc generates as `Column1`/`Column2` in the params struct (not named params). Other queries use plain `$N` and get named params.
+
+#### New Backend Files
+| File | Responsibility |
+|------|----------------|
+| `services/api/db/migrations/017_client_roles_groups.sql` | Schema migration |
+| `services/api/db/queries/client_roles.sql` | All role/group CRUD + membership + effective-roles queries |
+| `services/api/db/sqlc/client_roles.sql.go` | Generated sqlc code |
+| `services/api/internal/oauth2/client_roles.go` | Handlers: list/create/update/delete roles; assign/remove identities; assign/remove groups |
+| `services/api/internal/oauth2/client_groups.go` | Handlers: list/create/update/delete groups; add/remove members; add/remove roles |
+| `services/api/internal/identity/list_client_roles.go` | `ListIdentityClientRoles`, `RemoveIdentityClientRole`, `ListIdentityClientGroups`, `RemoveIdentityClientGroup` — identity-centric view |
+
+#### Backend Changes
+- `internal/oauth2/token.go` — `tokenClaims` gains `Roles []string \`json:"roles,omitempty"\``; `issueAndRespond` calls `GetEffectiveClientRolesForIdentity` and sets claim when non-empty.
+- `internal/oauth2/handler.go` — 22 new routes under `/api/oauth2/clients/{id}/roles` and `/api/oauth2/clients/{id}/groups`.
+- `internal/identity/handler.go` — 4 new routes: `GET/DELETE /api/identities/{id}/client-roles`, `GET/DELETE /api/identities/{id}/client-groups`.
+
+#### New Frontend
+| File | Change |
+|------|--------|
+| `web/src/pages/ClientDetailPage.tsx` | New page at `/oauth2/clients/:id` — Roles tab + Groups tab, each with create card and expandable rows (members/roles columns) |
+| `web/src/pages/IdentityDetailPage.tsx` | Added "Client Roles" card — shows direct role assignments (blue badge) and group memberships (purple badge), both removable |
+| `web/src/pages/OAuthClientsPage.tsx` | Added "Roles & Groups" link per client row linking to `ClientDetailPage` |
+| `web/src/api.ts` | Added `ClientRole`, `ClientGroup`, `RoleMember`, `RoleGroup`, `ClientRoleAssignment`, `ClientGroupMembership` types + ~20 API functions |
+| `web/src/App.tsx` | Added `/oauth2/clients/:id` protected route |
+
+### Dialog-Based Create Forms (completed 2026-06-17)
+Replaced inline create-form cards with modal dialogs on three listing pages to reduce visual clutter.
+
+#### New UI Component
+`web/src/components/ui/dialog.tsx` — Base UI `@base-ui/react/dialog` wrapper. Exports: `Dialog`, `DialogTrigger`, `DialogClose`, `DialogContent`, `DialogHeader`, `DialogTitle`, `DialogDescription`. Uses `data-open:` / `data-closed:` Tailwind v4 animation attributes (same pattern as `select.tsx`).
+
+#### Pages Updated
+| Page | Change |
+|------|--------|
+| `DashboardPage` | "Create Identity" card removed; "New Identity" button in Identity Registry card header opens dialog |
+| `RolesPage` | "Create Role" card removed; "New Role" button in Roles card header opens dialog |
+| `OAuthClientsPage` | "Register OAuth2 Client" card removed; "New Client" button in card header opens create dialog. Inline row edit form also moved to a separate edit dialog |
 
 ## Next Steps for the Next AI
 
