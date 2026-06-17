@@ -25,6 +25,11 @@ type AuditLog struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
+type ClientGroupRole struct {
+	GroupID pgtype.UUID `json:"group_id"`
+	RoleID  pgtype.UUID `json:"role_id"`
+}
+
 type Identity struct {
 	ID        pgtype.UUID        `json:"id"`
 	SubjectID string             `json:"subject_id"`
@@ -33,6 +38,16 @@ type Identity struct {
 	IsEnabled bool               `json:"is_enabled"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+}
+
+type IdentityClientGroup struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	GroupID    pgtype.UUID `json:"group_id"`
+}
+
+type IdentityClientRole struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	RoleID     pgtype.UUID `json:"role_id"`
 }
 
 type IdentityRole struct {
@@ -68,6 +83,22 @@ type Oauth2Client struct {
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	AutoConsent       bool               `json:"auto_consent"`
 	AllowRegistration bool               `json:"allow_registration"`
+}
+
+type Oauth2ClientGroup struct {
+	ID          pgtype.UUID        `json:"id"`
+	ClientID    pgtype.UUID        `json:"client_id"`
+	Name        string             `json:"name"`
+	Description pgtype.Text        `json:"description"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type Oauth2ClientRole struct {
+	ID          pgtype.UUID        `json:"id"`
+	ClientID    pgtype.UUID        `json:"client_id"`
+	Name        string             `json:"name"`
+	Description pgtype.Text        `json:"description"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 type Oauth2Token struct {

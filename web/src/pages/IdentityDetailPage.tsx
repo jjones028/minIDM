@@ -3,7 +3,10 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import {
   getIdentity, getIdentityRoles, getIdentitySessions, revokeIdentitySession,
   resetIdentityPassword, setIdentityEnabled,
+  listIdentityClientRoles, removeIdentityClientRole,
+  listIdentityClientGroups, removeIdentityClientGroup,
   isUnauthorized, type Identity, type Role, type IdentitySession,
+  type ClientRoleAssignment, type ClientGroupMembership,
 } from '@/api';
 import { useAuth } from '@/context/auth';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -32,6 +35,8 @@ export default function IdentityDetailPage() {
   const [sessions, setSessions] = useState<IdentitySession[]>([]);
   const [revokingHandle, setRevokingHandle] = useState<string | null>(null);
   const [togglingEnabled, setTogglingEnabled] = useState(false);
+  const [clientRoles, setClientRoles] = useState<ClientRoleAssignment[]>([]);
+  const [clientGroups, setClientGroups] = useState<ClientGroupMembership[]>([]);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [resetError, setResetError] = useState<string | null>(null);
@@ -40,12 +45,17 @@ export default function IdentityDetailPage() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([getIdentity(id!), getIdentityRoles(id!), getIdentitySessions(id!)])
-      .then(([identRes, rolesRes, sessionsRes]) => {
+    Promise.all([
+      getIdentity(id!), getIdentityRoles(id!), getIdentitySessions(id!),
+      listIdentityClientRoles(id!), listIdentityClientGroups(id!),
+    ])
+      .then(([identRes, rolesRes, sessionsRes, clientRolesRes, clientGroupsRes]) => {
         if (cancelled) return;
         setIdentity(identRes.data);
         setRoles(rolesRes.data ?? []);
         setSessions(sessionsRes.data ?? []);
+        setClientRoles(clientRolesRes.data ?? []);
+        setClientGroups(clientGroupsRes.data ?? []);
       })
       .catch(err => {
         if (isUnauthorized(err)) {
@@ -251,6 +261,85 @@ export default function IdentityDetailPage() {
             )}
           </CardContent>
         </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Client Roles</CardTitle>
+            <CardDescription>
+              Roles assigned to this identity for specific OAuth2 clients. These appear as the <code>roles</code> claim in issued tokens.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            {clientRoles.length === 0 && clientGroups.length === 0 ? (
+              <p className="text-sm text-muted-foreground px-6 py-4">No client roles or group memberships.</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="pl-6">Client</TableHead>
+                    <TableHead>Role / Group</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead className="w-20" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {clientRoles.map(r => (
+                    <TableRow key={`role-${r.role_id}`}>
+                      <TableCell className="pl-6 text-sm">
+                        <span className="font-medium">{r.client_name}</span>
+                        <span className="block text-xs text-muted-foreground font-mono">{r.app_client_id}</span>
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">{r.role_name}</TableCell>
+                      <TableCell>
+                        <span className="text-xs px-1.5 py-0.5 rounded-sm font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                          role
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right pr-4">
+                        <Button
+                          variant="ghost" size="sm"
+                          className="h-7 text-xs text-destructive hover:text-destructive"
+                          onClick={async () => {
+                            await removeIdentityClientRole(id!, r.role_id);
+                            setClientRoles(prev => prev.filter(x => x.role_id !== r.role_id));
+                          }}
+                        >
+                          Remove
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {clientGroups.map(g => (
+                    <TableRow key={`group-${g.group_id}`}>
+                      <TableCell className="pl-6 text-sm">
+                        <span className="font-medium">{g.client_name}</span>
+                        <span className="block text-xs text-muted-foreground font-mono">{g.app_client_id}</span>
+                      </TableCell>
+                      <TableCell className="text-sm">{g.group_name}</TableCell>
+                      <TableCell>
+                        <span className="text-xs px-1.5 py-0.5 rounded-sm font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                          group
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right pr-4">
+                        <Button
+                          variant="ghost" size="sm"
+                          className="h-7 text-xs text-destructive hover:text-destructive"
+                          onClick={async () => {
+                            await removeIdentityClientGroup(id!, g.group_id);
+                            setClientGroups(prev => prev.filter(x => x.group_id !== g.group_id));
+                          }}
+                        >
+                          Remove
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>Reset Password</CardTitle>

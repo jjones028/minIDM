@@ -8,11 +8,14 @@ import { useAuth } from '@/context/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
-  Card, CardContent, CardHeader, CardTitle, CardDescription,
+  Card, CardContent, CardHeader, CardTitle,
 } from '@/components/ui/card';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger,
+} from '@/components/ui/dialog';
 import { AppNav } from '@/components/app-nav';
 import { AxiosError } from 'axios';
 
@@ -21,6 +24,7 @@ export default function RolesPage() {
   const { setAuthenticated } = useAuth();
 
   const [roles, setRoles] = useState<Role[]>([]);
+  const [open, setOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
 
@@ -54,6 +58,7 @@ export default function RolesPage() {
       await createRole(newName.trim(), newDescription.trim());
       setNewName('');
       setNewDescription('');
+      setOpen(false);
       fetchRoles();
     } catch (err) {
       const e = err as AxiosError<string>;
@@ -100,37 +105,44 @@ export default function RolesPage() {
         </header>
 
         <Card>
-          <CardHeader>
-            <CardTitle>Create Role</CardTitle>
-            <CardDescription>Custom roles can be assigned permissions and identities.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleCreate} className="flex flex-col md:flex-row gap-4 items-end">
-              <div className="grid w-full gap-1.5">
-                <label className="text-sm font-medium leading-none">Name</label>
-                <Input
-                  placeholder="e.g. editor"
-                  value={newName}
-                  onChange={e => setNewName(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="grid w-full gap-1.5">
-                <label className="text-sm font-medium leading-none">Description</label>
-                <Input
-                  placeholder="Optional description"
-                  value={newDescription}
-                  onChange={e => setNewDescription(e.target.value)}
-                />
-              </div>
-              <Button type="submit" className="w-full md:w-auto">Create Role</Button>
-            </form>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Roles</CardTitle>
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogTrigger render={<Button size="sm">New Role</Button>} />
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create Role</DialogTitle>
+                  <DialogDescription>
+                    Custom roles can be assigned permissions and identities.
+                  </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleCreate} className="space-y-4">
+                  <div className="grid gap-1.5">
+                    <label className="text-sm font-medium leading-none">Name</label>
+                    <Input
+                      placeholder="e.g. editor"
+                      value={newName}
+                      onChange={e => setNewName(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <label className="text-sm font-medium leading-none">Description</label>
+                    <Input
+                      placeholder="Optional description"
+                      value={newDescription}
+                      onChange={e => setNewDescription(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button type="submit">Create Role</Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
           </CardHeader>
           <CardContent className="p-0">
             <Table>
