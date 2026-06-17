@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import {
   listOAuthClients, createOAuthClient, updateOAuthClient, deleteOAuthClient,
   rotateOAuthClientSecret,
@@ -14,6 +14,9 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger,
+} from '@/components/ui/dialog';
 import { AppNav } from '@/components/app-nav';
 import { AxiosError } from 'axios';
 
@@ -25,14 +28,16 @@ export default function OAuthClientsPage() {
 
   const [clients, setClients] = useState<OAuthClient[]>([]);
 
-  // Create form state
+  // Create dialog state
+  const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [newRedirectURIs, setNewRedirectURIs] = useState('');
   const [newScopes, setNewScopes] = useState<string[]>(['openid', 'profile', 'email']);
   const [newIsPublic, setNewIsPublic] = useState(false);
 
-  // Edit state
+  // Edit dialog state
+  const [editOpen, setEditOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
@@ -93,6 +98,7 @@ export default function OAuthClientsPage() {
       setNewRedirectURIs('');
       setNewScopes(['openid', 'profile', 'email']);
       setNewIsPublic(false);
+      setCreateOpen(false);
       fetchClients();
     } catch (err) {
       const e = err as AxiosError<string>;
@@ -109,9 +115,12 @@ export default function OAuthClientsPage() {
     setEditEnabled(c.is_enabled);
     setEditAutoConsent(c.auto_consent);
     setEditAllowRegistration(c.allow_registration);
+    setEditOpen(true);
   };
 
-  const handleUpdate = async (id: string) => {
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingId) return;
     const redirectUris = parseURIs(editRedirectURIs);
     if (redirectUris.length === 0) {
       alert('At least one redirect URI is required.');
@@ -127,7 +136,8 @@ export default function OAuthClientsPage() {
       allow_registration: editAllowRegistration,
     };
     try {
-      await updateOAuthClient(id, update);
+      await updateOAuthClient(editingId, update);
+      setEditOpen(false);
       setEditingId(null);
       fetchClients();
     } catch (err) {
@@ -208,15 +218,15 @@ export default function OAuthClientsPage() {
           </div>
         )}
 
-        {/* Create form */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Register OAuth2 Client</CardTitle>
-            <CardDescription>
-              Register an application that will use minIDM as an identity provider.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+        {/* Create dialog */}
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Register OAuth2 Client</DialogTitle>
+              <DialogDescription>
+                Register an application that will use minIDM as an identity provider.
+              </DialogDescription>
+            </DialogHeader>
             <form onSubmit={handleCreate} className="space-y-4">
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="grid gap-1.5">
@@ -284,15 +294,135 @@ export default function OAuthClientsPage() {
                   </span>
                 </label>
               </div>
-              <Button type="submit" className="w-full md:w-auto">Register Client</Button>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit">Register Client</Button>
+              </div>
             </form>
-          </CardContent>
-        </Card>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit dialog */}
+        <Dialog open={editOpen} onOpenChange={open => { setEditOpen(open); if (!open) setEditingId(null); }}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit OAuth2 Client</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleUpdate} className="space-y-4">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="grid gap-1.5">
+                  <label className="text-sm font-medium leading-none">Name</label>
+                  <Input
+                    value={editName}
+                    onChange={e => setEditName(e.target.value)}
+                    placeholder="Name"
+                    required
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <label className="text-sm font-medium leading-none">Description</label>
+                  <Input
+                    value={editDescription}
+                    onChange={e => setEditDescription(e.target.value)}
+                    placeholder="Description"
+                  />
+                </div>
+              </div>
+              <div className="grid gap-1.5">
+                <label className="text-sm font-medium leading-none">
+                  Redirect URIs{' '}
+                  <span className="text-muted-foreground font-normal">(one per line)</span>
+                </label>
+                <textarea
+                  className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  value={editRedirectURIs}
+                  onChange={e => setEditRedirectURIs(e.target.value)}
+                  placeholder="Redirect URIs, one per line"
+                />
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm font-medium leading-none">Scopes</p>
+                {ALL_SCOPES.map(scope => (
+                  <label key={scope} className="flex items-start gap-2.5 cursor-pointer py-1">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={editScopes.includes(scope)}
+                      onChange={e => toggleScope(scope, e.target.checked, editScopes, setEditScopes)}
+                    />
+                    <span>
+                      <span className="text-sm font-medium">{scope}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        {scope === 'openid'  && "Allows the client to verify the user's identity"}
+                        {scope === 'profile' && 'Allows the client to read basic profile information'}
+                        {scope === 'email'   && "Allows the client to read the user's email address"}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <div className="space-y-1 pt-1 border-t">
+                <p className="text-sm font-medium leading-none pt-2">Settings</p>
+                <label className="flex items-start gap-2.5 cursor-pointer py-1">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={editEnabled}
+                    onChange={e => setEditEnabled(e.target.checked)}
+                  />
+                  <span>
+                    <span className="text-sm font-medium">Enabled</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Allow this client to initiate authorization requests
+                    </span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2.5 cursor-pointer py-1">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={editAutoConsent}
+                    onChange={e => setEditAutoConsent(e.target.checked)}
+                  />
+                  <span>
+                    <span className="text-sm font-medium">Auto-consent</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Skip the consent screen and grant access immediately — only enable for fully trusted first-party clients
+                    </span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2.5 cursor-pointer py-1">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={editAllowRegistration}
+                    onChange={e => setEditAllowRegistration(e.target.checked)}
+                  />
+                  <span>
+                    <span className="text-sm font-medium">Allow registration</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Show the Sign Up tab on the login screen when users arrive via this client (requires the global REGISTRATION_ENABLED flag to also be set)
+                    </span>
+                  </span>
+                </label>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit">Save Changes</Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
 
         {/* Clients table */}
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>OAuth2 Clients</CardTitle>
+            <Button size="sm" onClick={() => setCreateOpen(true)}>New Client</Button>
           </CardHeader>
           <CardContent className="p-0">
             <Table>
@@ -315,171 +445,74 @@ export default function OAuthClientsPage() {
                 )}
                 {clients.map(client => (
                   <TableRow key={client.id}>
-                    {editingId === client.id ? (
-                      <>
-                        <TableCell className="pl-6" colSpan={5}>
-                          <div className="space-y-3">
-                          <div className="max-w-lg space-y-3">
-                            <div className="grid md:grid-cols-2 gap-2">
-                              <Input
-                                value={editName}
-                                onChange={e => setEditName(e.target.value)}
-                                placeholder="Name"
-                                className="h-8"
-                              />
-                              <Input
-                                value={editDescription}
-                                onChange={e => setEditDescription(e.target.value)}
-                                placeholder="Description"
-                                className="h-8"
-                              />
-                            </div>
-                            <textarea
-                              className="flex min-h-[60px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                              value={editRedirectURIs}
-                              onChange={e => setEditRedirectURIs(e.target.value)}
-                              placeholder="Redirect URIs, one per line"
-                            />
-                            <div className="space-y-1">
-                              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Scopes</p>
-                              {ALL_SCOPES.map(scope => (
-                                <label key={scope} className="flex items-start gap-2.5 cursor-pointer py-1">
-                                  <input
-                                    type="checkbox"
-                                    className="mt-0.5"
-                                    checked={editScopes.includes(scope)}
-                                    onChange={e => toggleScope(scope, e.target.checked, editScopes, setEditScopes)}
-                                  />
-                                  <span>
-                                    <span className="text-sm font-medium">{scope}</span>
-                                    <span className="block text-xs text-muted-foreground">
-                                      {scope === 'openid'  && 'Allows the client to verify the user\'s identity'}
-                                      {scope === 'profile' && 'Allows the client to read basic profile information'}
-                                      {scope === 'email'   && 'Allows the client to read the user\'s email address'}
-                                    </span>
-                                  </span>
-                                </label>
-                              ))}
-                            </div>
-                            <div className="space-y-1 pt-1 border-t">
-                              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide pt-2">Settings</p>
-                              <label className="flex items-start gap-2.5 cursor-pointer py-1">
-                                <input
-                                  type="checkbox"
-                                  className="mt-0.5"
-                                  checked={editEnabled}
-                                  onChange={e => setEditEnabled(e.target.checked)}
-                                />
-                                <span>
-                                  <span className="text-sm font-medium">Enabled</span>
-                                  <span className="block text-xs text-muted-foreground">
-                                    Allow this client to initiate authorization requests
-                                  </span>
-                                </span>
-                              </label>
-                              <label className="flex items-start gap-2.5 cursor-pointer py-1">
-                                <input
-                                  type="checkbox"
-                                  className="mt-0.5"
-                                  checked={editAutoConsent}
-                                  onChange={e => setEditAutoConsent(e.target.checked)}
-                                />
-                                <span>
-                                  <span className="text-sm font-medium">Auto-consent</span>
-                                  <span className="block text-xs text-muted-foreground">
-                                    Skip the consent screen and grant access immediately — only enable for fully trusted first-party clients
-                                  </span>
-                                </span>
-                              </label>
-                              <label className="flex items-start gap-2.5 cursor-pointer py-1">
-                                <input
-                                  type="checkbox"
-                                  className="mt-0.5"
-                                  checked={editAllowRegistration}
-                                  onChange={e => setEditAllowRegistration(e.target.checked)}
-                                />
-                                <span>
-                                  <span className="text-sm font-medium">Allow registration</span>
-                                  <span className="block text-xs text-muted-foreground">
-                                    Show the Sign Up tab on the login screen when users arrive via this client (requires the global REGISTRATION_ENABLED flag to also be set)
-                                  </span>
-                                </span>
-                              </label>
-                            </div>
-                          </div>
-                            <div className="flex gap-2 pt-2 justify-end">
-                              <Button size="sm" onClick={() => handleUpdate(client.id)}>Save</Button>
-                              <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>Cancel</Button>
-                            </div>
-                          </div>
-                        </TableCell>
-                      </>
-                    ) : (
-                      <>
-                        <TableCell className="pl-6">
-                          <span className="font-medium">{client.name}</span>
-                          {client.description && (
-                            <p className="text-xs text-muted-foreground mt-0.5">{client.description}</p>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <ClientIDCell clientId={client.client_id} />
-                        </TableCell>
-                        <TableCell className="text-muted-foreground text-sm">
-                          {client.scopes.join(', ')}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-col gap-1">
-                            <span className={`text-xs px-1.5 py-0.5 rounded-sm font-medium w-fit ${
-                              client.is_enabled
-                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                                : 'bg-muted text-muted-foreground'
-                            }`}>
-                              {client.is_enabled ? 'enabled' : 'disabled'}
-                            </span>
-                            {client.is_public && (
-                              <span className="text-xs px-1.5 py-0.5 rounded-sm font-medium w-fit bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                                public
-                              </span>
-                            )}
-                            {client.auto_consent && (
-                              <span className="text-xs px-1.5 py-0.5 rounded-sm font-medium w-fit bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                auto-consent
-                              </span>
-                            )}
-                            {client.allow_registration && (
-                              <span className="text-xs px-1.5 py-0.5 rounded-sm font-medium w-fit bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
-                                registration
-                              </span>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-1">
-                            <Button variant="ghost" size="sm" onClick={() => startEdit(client)}>
-                              Edit
-                            </Button>
-                            {!client.is_public && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleRotate(client)}
-                              >
-                                Rotate Secret
-                              </Button>
-                            )}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-destructive hover:text-destructive"
-                              onClick={() => handleDelete(client.id)}
-                            >
-                              Delete
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </>
-                    )}
+                    <TableCell className="pl-6">
+                      <span className="font-medium">{client.name}</span>
+                      {client.description && (
+                        <p className="text-xs text-muted-foreground mt-0.5">{client.description}</p>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <ClientIDCell clientId={client.client_id} />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {client.scopes.join(', ')}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1">
+                        <span className={`text-xs px-1.5 py-0.5 rounded-sm font-medium w-fit ${
+                          client.is_enabled
+                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                            : 'bg-muted text-muted-foreground'
+                        }`}>
+                          {client.is_enabled ? 'enabled' : 'disabled'}
+                        </span>
+                        {client.is_public && (
+                          <span className="text-xs px-1.5 py-0.5 rounded-sm font-medium w-fit bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                            public
+                          </span>
+                        )}
+                        {client.auto_consent && (
+                          <span className="text-xs px-1.5 py-0.5 rounded-sm font-medium w-fit bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                            auto-consent
+                          </span>
+                        )}
+                        {client.allow_registration && (
+                          <span className="text-xs px-1.5 py-0.5 rounded-sm font-medium w-fit bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                            registration
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => startEdit(client)}>
+                          Edit
+                        </Button>
+                        {!client.is_public && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRotate(client)}
+                          >
+                            Rotate Secret
+                          </Button>
+                        )}
+                        <Link
+                          to={`/oauth2/clients/${client.id}`}
+                          className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 hover:bg-accent hover:text-accent-foreground h-9 px-3"
+                        >
+                          Roles &amp; Groups
+                        </Link>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => handleDelete(client.id)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

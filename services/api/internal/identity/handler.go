@@ -15,6 +15,7 @@ import (
 
 func Register(mux *http.ServeMux, queries *db.Queries, protectRead, protectWrite func(http.Handler) http.Handler, auditor *audit.Auditor, registrationEnabled bool) {
 	api := &API{
+		q:                     queries,
 		addRegistration:       NewAddRegistrationHandler(queries, registrationEnabled),
 		createIdentity:        NewCreateIdentityHandler(queries),
 		listIdentities:        NewListIdentitiesHandler(queries),
@@ -29,6 +30,7 @@ func Register(mux *http.ServeMux, queries *db.Queries, protectRead, protectWrite
 }
 
 type API struct {
+	q                     *db.Queries
 	addRegistration       *AddRegistrationHandler
 	createIdentity        *CreateIdentityHandler
 	listIdentities        *ListIdentitiesHandler
@@ -49,6 +51,10 @@ func (a *API) RegisterRoutes(mux *http.ServeMux, protectRead, protectWrite func(
 	mux.Handle("DELETE /api/identities/{id}/sessions/{handle}", protectWrite(http.HandlerFunc(a.RevokeSession)))
 	mux.Handle("POST /api/identities/{id}/reset-password", protectWrite(http.HandlerFunc(a.ResetPassword)))
 	mux.Handle("PATCH /api/identities/{id}/enabled", protectWrite(http.HandlerFunc(a.SetEnabled)))
+	mux.Handle("GET /api/identities/{id}/client-roles", protectRead(http.HandlerFunc(a.ListIdentityClientRoles)))
+	mux.Handle("DELETE /api/identities/{id}/client-roles/{roleId}", protectWrite(http.HandlerFunc(a.RemoveIdentityClientRole)))
+	mux.Handle("GET /api/identities/{id}/client-groups", protectRead(http.HandlerFunc(a.ListIdentityClientGroups)))
+	mux.Handle("DELETE /api/identities/{id}/client-groups/{groupId}", protectWrite(http.HandlerFunc(a.RemoveIdentityClientGroup)))
 }
 
 func (a *API) List(w http.ResponseWriter, r *http.Request) {

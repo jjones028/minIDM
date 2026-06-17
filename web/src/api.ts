@@ -214,6 +214,114 @@ export const deleteOAuthClient = (id: string) => api.delete(`/oauth2/clients/${i
 export const isUnauthorized = (err: unknown) =>
   (err as AxiosError)?.response?.status === 401;
 
+// ---- Client Roles ----
+
+export interface ClientRole {
+  id: string;
+  client_id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+}
+
+export interface ClientGroup {
+  id: string;
+  client_id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+}
+
+export interface RoleMember {
+  id: string;
+  email: string;
+}
+
+export interface RoleGroup {
+  id: string;
+  name: string;
+}
+
+export interface ClientRoleAssignment {
+  role_id: string;
+  role_name: string;
+  description: string | null;
+  client_db_id: string;
+  client_name: string;
+  app_client_id: string;
+}
+
+export interface ClientGroupMembership {
+  group_id: string;
+  group_name: string;
+  description: string | null;
+  client_db_id: string;
+  client_name: string;
+  app_client_id: string;
+}
+
+// Client roles CRUD
+export const listClientRoles = (clientDbId: string) =>
+  api.get<ClientRole[]>(`/oauth2/clients/${clientDbId}/roles`);
+export const createClientRole = (clientDbId: string, name: string, description: string) =>
+  api.post<ClientRole>(`/oauth2/clients/${clientDbId}/roles`, { name, description });
+export const updateClientRole = (clientDbId: string, roleId: string, name: string, description: string) =>
+  api.patch<ClientRole>(`/oauth2/clients/${clientDbId}/roles/${roleId}`, { name, description });
+export const deleteClientRole = (clientDbId: string, roleId: string) =>
+  api.delete(`/oauth2/clients/${clientDbId}/roles/${roleId}`);
+
+// Role identity assignments
+export const listIdentitiesWithRole = (clientDbId: string, roleId: string) =>
+  api.get<RoleMember[]>(`/oauth2/clients/${clientDbId}/roles/${roleId}/identities`);
+export const assignIdentityToRole = (clientDbId: string, roleId: string, identityId: string) =>
+  api.post(`/oauth2/clients/${clientDbId}/roles/${roleId}/identities`, { identity_id: identityId });
+export const removeIdentityFromRole = (clientDbId: string, roleId: string, identityId: string) =>
+  api.delete(`/oauth2/clients/${clientDbId}/roles/${roleId}/identities/${identityId}`);
+
+// Role group assignments
+export const listGroupsForRole = (clientDbId: string, roleId: string) =>
+  api.get<RoleGroup[]>(`/oauth2/clients/${clientDbId}/roles/${roleId}/groups`);
+export const assignGroupToRole = (clientDbId: string, roleId: string, groupId: string) =>
+  api.post(`/oauth2/clients/${clientDbId}/roles/${roleId}/groups`, { group_id: groupId });
+export const removeGroupFromRole = (clientDbId: string, roleId: string, groupId: string) =>
+  api.delete(`/oauth2/clients/${clientDbId}/roles/${roleId}/groups/${groupId}`);
+
+// Client groups CRUD
+export const listClientGroups = (clientDbId: string) =>
+  api.get<ClientGroup[]>(`/oauth2/clients/${clientDbId}/groups`);
+export const createClientGroup = (clientDbId: string, name: string, description: string) =>
+  api.post<ClientGroup>(`/oauth2/clients/${clientDbId}/groups`, { name, description });
+export const updateClientGroup = (clientDbId: string, groupId: string, name: string, description: string) =>
+  api.patch<ClientGroup>(`/oauth2/clients/${clientDbId}/groups/${groupId}`, { name, description });
+export const deleteClientGroup = (clientDbId: string, groupId: string) =>
+  api.delete(`/oauth2/clients/${clientDbId}/groups/${groupId}`);
+
+// Group member management
+export const listGroupMembers = (clientDbId: string, groupId: string) =>
+  api.get<RoleMember[]>(`/oauth2/clients/${clientDbId}/groups/${groupId}/members`);
+export const addGroupMember = (clientDbId: string, groupId: string, identityId: string) =>
+  api.post(`/oauth2/clients/${clientDbId}/groups/${groupId}/members`, { identity_id: identityId });
+export const removeGroupMember = (clientDbId: string, groupId: string, identityId: string) =>
+  api.delete(`/oauth2/clients/${clientDbId}/groups/${groupId}/members/${identityId}`);
+
+// Group role management
+export const listGroupRoles = (clientDbId: string, groupId: string) =>
+  api.get<ClientRole[]>(`/oauth2/clients/${clientDbId}/groups/${groupId}/roles`);
+export const addRoleToGroup = (clientDbId: string, groupId: string, roleId: string) =>
+  api.post(`/oauth2/clients/${clientDbId}/groups/${groupId}/roles`, { role_id: roleId });
+export const removeRoleFromGroup = (clientDbId: string, groupId: string, roleId: string) =>
+  api.delete(`/oauth2/clients/${clientDbId}/groups/${groupId}/roles/${roleId}`);
+
+// Identity perspective
+export const listIdentityClientRoles = (identityId: string) =>
+  api.get<ClientRoleAssignment[]>(`/identities/${identityId}/client-roles`);
+export const removeIdentityClientRole = (identityId: string, roleId: string) =>
+  api.delete(`/identities/${identityId}/client-roles/${roleId}`);
+export const listIdentityClientGroups = (identityId: string) =>
+  api.get<ClientGroupMembership[]>(`/identities/${identityId}/client-groups`);
+export const removeIdentityClientGroup = (identityId: string, groupId: string) =>
+  api.delete(`/identities/${identityId}/client-groups/${groupId}`);
+
 export interface AuditLog {
   id: string;
   actor_id: string | null;

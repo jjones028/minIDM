@@ -22,9 +22,10 @@ const (
 // tokenClaims is the JWT payload for both access tokens and id_tokens.
 type tokenClaims struct {
 	jwt.RegisteredClaims
-	Email string `json:"email,omitempty"`
-	Scope string `json:"scope,omitempty"`
-	Nonce string `json:"nonce,omitempty"`
+	Email string   `json:"email,omitempty"`
+	Scope string   `json:"scope,omitempty"`
+	Nonce string   `json:"nonce,omitempty"`
+	Roles []string `json:"roles,omitempty"`
 }
 
 // TokenHandler handles POST /oauth2/token.
@@ -192,6 +193,13 @@ func (h *TokenHandler) issueAndRespond(w http.ResponseWriter, r *http.Request, c
 	}
 	if hasOpenID && nonce != "" {
 		claims.Nonce = nonce
+	}
+	roles, _ := h.q.GetEffectiveClientRolesForIdentity(r.Context(), db.GetEffectiveClientRolesForIdentityParams{
+		Column1: client.ID,
+		Column2: identity.ID,
+	})
+	if len(roles) > 0 {
+		claims.Roles = roles
 	}
 
 	t := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)

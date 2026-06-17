@@ -133,6 +133,30 @@ func Register(
 	mux.Handle("GET /api/oauth2/tokens", protectClientRead(http.HandlerFunc(api.ListTokens)))
 	mux.Handle("DELETE /api/oauth2/tokens/{id}", protectClientWrite(http.HandlerFunc(api.RevokeToken)))
 	mux.Handle("POST /api/oauth2/tokens/inspect", protectClientRead(http.HandlerFunc(api.InspectToken)))
+
+	// Client roles
+	mux.Handle("GET /api/oauth2/clients/{id}/roles", protectClientRead(http.HandlerFunc(api.ListClientRoles)))
+	mux.Handle("POST /api/oauth2/clients/{id}/roles", protectClientWrite(http.HandlerFunc(api.CreateClientRole)))
+	mux.Handle("PATCH /api/oauth2/clients/{id}/roles/{roleId}", protectClientWrite(http.HandlerFunc(api.UpdateClientRole)))
+	mux.Handle("DELETE /api/oauth2/clients/{id}/roles/{roleId}", protectClientWrite(http.HandlerFunc(api.DeleteClientRole)))
+	mux.Handle("GET /api/oauth2/clients/{id}/roles/{roleId}/identities", protectClientRead(http.HandlerFunc(api.ListIdentitiesWithRole)))
+	mux.Handle("POST /api/oauth2/clients/{id}/roles/{roleId}/identities", protectClientWrite(http.HandlerFunc(api.AssignIdentityToRole)))
+	mux.Handle("DELETE /api/oauth2/clients/{id}/roles/{roleId}/identities/{identityId}", protectClientWrite(http.HandlerFunc(api.RemoveIdentityFromRole)))
+	mux.Handle("GET /api/oauth2/clients/{id}/roles/{roleId}/groups", protectClientRead(http.HandlerFunc(api.ListGroupsForRole)))
+	mux.Handle("POST /api/oauth2/clients/{id}/roles/{roleId}/groups", protectClientWrite(http.HandlerFunc(api.AssignGroupToRole)))
+	mux.Handle("DELETE /api/oauth2/clients/{id}/roles/{roleId}/groups/{groupId}", protectClientWrite(http.HandlerFunc(api.RemoveGroupFromRole)))
+
+	// Client groups
+	mux.Handle("GET /api/oauth2/clients/{id}/groups", protectClientRead(http.HandlerFunc(api.ListClientGroups)))
+	mux.Handle("POST /api/oauth2/clients/{id}/groups", protectClientWrite(http.HandlerFunc(api.CreateClientGroup)))
+	mux.Handle("PATCH /api/oauth2/clients/{id}/groups/{groupId}", protectClientWrite(http.HandlerFunc(api.UpdateClientGroup)))
+	mux.Handle("DELETE /api/oauth2/clients/{id}/groups/{groupId}", protectClientWrite(http.HandlerFunc(api.DeleteClientGroup)))
+	mux.Handle("GET /api/oauth2/clients/{id}/groups/{groupId}/members", protectClientRead(http.HandlerFunc(api.ListGroupMembers)))
+	mux.Handle("POST /api/oauth2/clients/{id}/groups/{groupId}/members", protectClientWrite(http.HandlerFunc(api.AddGroupMember)))
+	mux.Handle("DELETE /api/oauth2/clients/{id}/groups/{groupId}/members/{identityId}", protectClientWrite(http.HandlerFunc(api.RemoveGroupMember)))
+	mux.Handle("GET /api/oauth2/clients/{id}/groups/{groupId}/roles", protectClientRead(http.HandlerFunc(api.ListGroupRoles)))
+	mux.Handle("POST /api/oauth2/clients/{id}/groups/{groupId}/roles", protectClientWrite(http.HandlerFunc(api.AddRoleToGroup)))
+	mux.Handle("DELETE /api/oauth2/clients/{id}/groups/{groupId}/roles/{roleId}", protectClientWrite(http.HandlerFunc(api.RemoveRoleFromGroup)))
 }
 
 // --- HTTP handlers ---

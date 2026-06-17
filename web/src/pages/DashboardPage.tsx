@@ -7,11 +7,14 @@ import { useAuth } from '@/context/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
-  Card, CardContent, CardHeader, CardTitle, CardDescription,
+  Card, CardContent, CardHeader, CardTitle,
 } from '@/components/ui/card';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger,
+} from '@/components/ui/dialog';
 import { AxiosError } from 'axios';
 import { AppNav } from '@/components/app-nav';
 
@@ -19,6 +22,7 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const { setAuthenticated } = useAuth();
   const [identities, setIdentities] = useState<Identity[]>([]);
+  const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
@@ -49,6 +53,7 @@ export default function DashboardPage() {
       await createIdentity({ email, password });
       setEmail('');
       setPassword('');
+      setOpen(false);
       fetchIdentities();
     } catch (err) {
       const axiosError = err as AxiosError<string>;
@@ -68,40 +73,47 @@ export default function DashboardPage() {
         </header>
 
         <Card>
-          <CardHeader>
-            <CardTitle>Create Identity</CardTitle>
-            <CardDescription>New identities are automatically granted the viewer role.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleCreateIdentity} className="flex flex-col md:flex-row gap-4 items-end">
-              <div className="grid w-full gap-1.5">
-                <label className="text-sm font-medium leading-none">Email Address</label>
-                <Input
-                  type="email"
-                  placeholder="name@company.com"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="grid w-full gap-1.5">
-                <label className="text-sm font-medium leading-none">Password</label>
-                <Input
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  required
-                />
-              </div>
-              <Button type="submit" className="w-full md:w-auto">Create Identity</Button>
-            </form>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Identity Registry</CardTitle>
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogTrigger render={<Button size="sm">New Identity</Button>} />
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create Identity</DialogTitle>
+                  <DialogDescription>
+                    New identities are automatically granted the viewer role.
+                  </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleCreateIdentity} className="space-y-4">
+                  <div className="grid gap-1.5">
+                    <label className="text-sm font-medium leading-none">Email Address</label>
+                    <Input
+                      type="email"
+                      placeholder="name@company.com"
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <label className="text-sm font-medium leading-none">Password</label>
+                    <Input
+                      type="password"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button type="submit">Create Identity</Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
           </CardHeader>
           <CardContent className="p-0">
             <Table>
