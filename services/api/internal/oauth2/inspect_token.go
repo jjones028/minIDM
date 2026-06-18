@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	db "minIDM/db/sqlc"
+	"minIDM/internal/httputil"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -47,8 +48,6 @@ func (h *InspectTokenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-
 	var claims tokenClaims
 	parsed, parseErr := jwt.ParseWithClaims(body.Token, &claims, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
@@ -59,7 +58,7 @@ func (h *InspectTokenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 
 	// Malformed tokens can't be decoded at all.
 	if errors.Is(parseErr, jwt.ErrTokenMalformed) {
-		json.NewEncoder(w).Encode(inspectResponse{
+		httputil.WriteJSON(w, inspectResponse{
 			Status: inspectStatus{Error: "token is malformed — not a valid JWT"},
 		})
 		return
@@ -121,7 +120,7 @@ func (h *InspectTokenHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 
 	active := signatureValid && !expired && dbStatus == "active"
 
-	json.NewEncoder(w).Encode(inspectResponse{
+	httputil.WriteJSON(w, inspectResponse{
 		Header: header,
 		Claims: claimsMap,
 		Status: inspectStatus{

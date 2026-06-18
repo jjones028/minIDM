@@ -1,8 +1,9 @@
 package oauth2
 
 import (
-	"encoding/json"
 	"net/http"
+
+	"minIDM/internal/httputil"
 )
 
 // DiscoveryHandler handles GET /.well-known/openid-configuration.
@@ -32,6 +33,5 @@ func (h *DiscoveryHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"code_challenge_methods_supported":      []string{"S256"},
 		"claims_supported":                      []string{"sub", "iss", "aud", "exp", "iat", "email"},
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(doc)
+	httputil.WriteJSON(w, doc)
 }

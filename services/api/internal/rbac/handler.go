@@ -3,11 +3,11 @@ package rbac
 import (
 	"encoding/json"
 	"errors"
-	db "minIDM/db/sqlc"
-	"minIDM/internal/audit"
 	"net/http"
 
-	"github.com/jackc/pgx/v5/pgtype"
+	db "minIDM/db/sqlc"
+	"minIDM/internal/audit"
+	"minIDM/internal/httputil"
 )
 
 type API struct {
@@ -63,12 +63,11 @@ func (a *API) ListRoles(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(roles)
+	httputil.WriteJSON(w, roles)
 }
 
 func (a *API) ListIdentityRoles(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUID(r.PathValue("id"))
+	id, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -78,12 +77,11 @@ func (a *API) ListIdentityRoles(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(roles)
+	httputil.WriteJSON(w, roles)
 }
 
 func (a *API) AssignRole(w http.ResponseWriter, r *http.Request) {
-	identityID, err := parseUUID(r.PathValue("id"))
+	identityID, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -95,7 +93,7 @@ func (a *API) AssignRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_request", http.StatusBadRequest)
 		return
 	}
-	roleID, err := parseUUID(req.RoleID)
+	roleID, err := httputil.ParseUUID(req.RoleID)
 	if err != nil {
 		http.Error(w, "invalid_role_id", http.StatusBadRequest)
 		return
@@ -139,13 +137,11 @@ func (a *API) CreateRole(w http.ResponseWriter, r *http.Request) {
 	a.auditor.Log(r.Context(), actorID, "role.create", "role", audit.UUIDStr(role.ID), map[string]any{
 		"name": role.Name,
 	})
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(role)
+	httputil.WriteJSONStatus(w, http.StatusCreated, role)
 }
 
 func (a *API) UpdateRole(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUID(r.PathValue("id"))
+	id, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -175,12 +171,11 @@ func (a *API) UpdateRole(w http.ResponseWriter, r *http.Request) {
 	a.auditor.Log(r.Context(), actorID, "role.update", "role", audit.UUIDStr(role.ID), map[string]any{
 		"name": role.Name,
 	})
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(role)
+	httputil.WriteJSON(w, role)
 }
 
 func (a *API) DeleteRole(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUID(r.PathValue("id"))
+	id, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -203,12 +198,12 @@ func (a *API) DeleteRole(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) RemoveRole(w http.ResponseWriter, r *http.Request) {
-	identityID, err := parseUUID(r.PathValue("id"))
+	identityID, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	roleID, err := parseUUID(r.PathValue("roleId"))
+	roleID, err := httputil.ParseUUID(r.PathValue("roleId"))
 	if err != nil {
 		http.Error(w, "invalid_role_id", http.StatusBadRequest)
 		return
@@ -233,8 +228,7 @@ func (a *API) ListResources(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resources)
+	httputil.WriteJSON(w, resources)
 }
 
 func (a *API) ListActions(w http.ResponseWriter, r *http.Request) {
@@ -243,12 +237,11 @@ func (a *API) ListActions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(actions)
+	httputil.WriteJSON(w, actions)
 }
 
 func (a *API) ListRolePermissions(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUID(r.PathValue("id"))
+	id, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -258,12 +251,11 @@ func (a *API) ListRolePermissions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(perms)
+	httputil.WriteJSON(w, perms)
 }
 
 func (a *API) AddRolePermission(w http.ResponseWriter, r *http.Request) {
-	roleID, err := parseUUID(r.PathValue("id"))
+	roleID, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -276,12 +268,12 @@ func (a *API) AddRolePermission(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_request", http.StatusBadRequest)
 		return
 	}
-	resourceID, err := parseUUID(req.ResourceID)
+	resourceID, err := httputil.ParseUUID(req.ResourceID)
 	if err != nil {
 		http.Error(w, "invalid_resource_id", http.StatusBadRequest)
 		return
 	}
-	actionID, err := parseUUID(req.ActionID)
+	actionID, err := httputil.ParseUUID(req.ActionID)
 	if err != nil {
 		http.Error(w, "invalid_action_id", http.StatusBadRequest)
 		return
@@ -308,18 +300,16 @@ func (a *API) AddRolePermission(w http.ResponseWriter, r *http.Request) {
 		"resource_id": req.ResourceID,
 		"action_id":   req.ActionID,
 	})
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(perm)
+	httputil.WriteJSONStatus(w, http.StatusCreated, perm)
 }
 
 func (a *API) RemoveRolePermission(w http.ResponseWriter, r *http.Request) {
-	roleID, err := parseUUID(r.PathValue("id"))
+	roleID, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	permID, err := parseUUID(r.PathValue("permId"))
+	permID, err := httputil.ParseUUID(r.PathValue("permId"))
 	if err != nil {
 		http.Error(w, "invalid_perm_id", http.StatusBadRequest)
 		return
@@ -344,10 +334,4 @@ func (a *API) RemoveRolePermission(w http.ResponseWriter, r *http.Request) {
 		"permission_id": audit.UUIDStr(permID),
 	})
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func parseUUID(s string) (pgtype.UUID, error) {
-	var id pgtype.UUID
-	err := id.Scan(s)
-	return id, err
 }

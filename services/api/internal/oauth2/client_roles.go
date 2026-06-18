@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	db "minIDM/db/sqlc"
+	"minIDM/internal/httputil"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -30,7 +31,7 @@ func toClientRoleResponse(r db.Oauth2ClientRole) clientRoleResponse {
 }
 
 func (a *API) ListClientRoles(w http.ResponseWriter, r *http.Request) {
-	clientID, err := parseUUID(r.PathValue("id"))
+	clientID, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -47,12 +48,11 @@ func (a *API) ListClientRoles(w http.ResponseWriter, r *http.Request) {
 	for i, role := range roles {
 		out[i] = toClientRoleResponse(role)
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(out)
+	httputil.WriteJSON(w, out)
 }
 
 func (a *API) CreateClientRole(w http.ResponseWriter, r *http.Request) {
-	clientID, err := parseUUID(r.PathValue("id"))
+	clientID, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -78,13 +78,11 @@ func (a *API) CreateClientRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(toClientRoleResponse(role))
+	httputil.WriteJSONStatus(w, http.StatusCreated, toClientRoleResponse(role))
 }
 
 func (a *API) UpdateClientRole(w http.ResponseWriter, r *http.Request) {
-	roleID, err := parseUUID(r.PathValue("roleId"))
+	roleID, err := httputil.ParseUUID(r.PathValue("roleId"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -114,12 +112,11 @@ func (a *API) UpdateClientRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toClientRoleResponse(role))
+	httputil.WriteJSON(w, toClientRoleResponse(role))
 }
 
 func (a *API) DeleteClientRole(w http.ResponseWriter, r *http.Request) {
-	roleID, err := parseUUID(r.PathValue("roleId"))
+	roleID, err := httputil.ParseUUID(r.PathValue("roleId"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -134,7 +131,7 @@ func (a *API) DeleteClientRole(w http.ResponseWriter, r *http.Request) {
 // --- Identity assignments for a role ---
 
 func (a *API) ListIdentitiesWithRole(w http.ResponseWriter, r *http.Request) {
-	roleID, err := parseUUID(r.PathValue("roleId"))
+	roleID, err := httputil.ParseUUID(r.PathValue("roleId"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -147,12 +144,11 @@ func (a *API) ListIdentitiesWithRole(w http.ResponseWriter, r *http.Request) {
 	if rows == nil {
 		rows = []db.ListIdentitiesWithClientRoleRow{}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(rows)
+	httputil.WriteJSON(w, rows)
 }
 
 func (a *API) AssignIdentityToRole(w http.ResponseWriter, r *http.Request) {
-	roleID, err := parseUUID(r.PathValue("roleId"))
+	roleID, err := httputil.ParseUUID(r.PathValue("roleId"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -164,7 +160,7 @@ func (a *API) AssignIdentityToRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_request", http.StatusBadRequest)
 		return
 	}
-	identityID, err := parseUUID(req.IdentityID)
+	identityID, err := httputil.ParseUUID(req.IdentityID)
 	if err != nil {
 		http.Error(w, "invalid_identity_id", http.StatusBadRequest)
 		return
@@ -180,12 +176,12 @@ func (a *API) AssignIdentityToRole(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) RemoveIdentityFromRole(w http.ResponseWriter, r *http.Request) {
-	roleID, err := parseUUID(r.PathValue("roleId"))
+	roleID, err := httputil.ParseUUID(r.PathValue("roleId"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	identityID, err := parseUUID(r.PathValue("identityId"))
+	identityID, err := httputil.ParseUUID(r.PathValue("identityId"))
 	if err != nil {
 		http.Error(w, "invalid_identity_id", http.StatusBadRequest)
 		return
@@ -203,7 +199,7 @@ func (a *API) RemoveIdentityFromRole(w http.ResponseWriter, r *http.Request) {
 // --- Group assignments for a role ---
 
 func (a *API) ListGroupsForRole(w http.ResponseWriter, r *http.Request) {
-	roleID, err := parseUUID(r.PathValue("roleId"))
+	roleID, err := httputil.ParseUUID(r.PathValue("roleId"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -216,12 +212,11 @@ func (a *API) ListGroupsForRole(w http.ResponseWriter, r *http.Request) {
 	if rows == nil {
 		rows = []db.ListGroupsForClientRoleRow{}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(rows)
+	httputil.WriteJSON(w, rows)
 }
 
 func (a *API) AssignGroupToRole(w http.ResponseWriter, r *http.Request) {
-	roleID, err := parseUUID(r.PathValue("roleId"))
+	roleID, err := httputil.ParseUUID(r.PathValue("roleId"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -233,7 +228,7 @@ func (a *API) AssignGroupToRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_request", http.StatusBadRequest)
 		return
 	}
-	groupID, err := parseUUID(req.GroupID)
+	groupID, err := httputil.ParseUUID(req.GroupID)
 	if err != nil {
 		http.Error(w, "invalid_group_id", http.StatusBadRequest)
 		return
@@ -249,12 +244,12 @@ func (a *API) AssignGroupToRole(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) RemoveGroupFromRole(w http.ResponseWriter, r *http.Request) {
-	roleID, err := parseUUID(r.PathValue("roleId"))
+	roleID, err := httputil.ParseUUID(r.PathValue("roleId"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	groupID, err := parseUUID(r.PathValue("groupId"))
+	groupID, err := httputil.ParseUUID(r.PathValue("groupId"))
 	if err != nil {
 		http.Error(w, "invalid_group_id", http.StatusBadRequest)
 		return

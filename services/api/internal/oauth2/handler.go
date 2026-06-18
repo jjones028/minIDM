@@ -8,6 +8,7 @@ import (
 
 	db "minIDM/db/sqlc"
 	"minIDM/internal/audit"
+	"minIDM/internal/httputil"
 	"minIDM/internal/rbac"
 
 	"github.com/jackc/pgx/v5"
@@ -171,8 +172,7 @@ func (a *API) ListClients(w http.ResponseWriter, r *http.Request) {
 	for i, c := range clients {
 		out[i] = toClientResponse(c)
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(out)
+	httputil.WriteJSON(w, out)
 }
 
 func (a *API) CreateClient(w http.ResponseWriter, r *http.Request) {
@@ -217,16 +217,14 @@ func (a *API) CreateClient(w http.ResponseWriter, r *http.Request) {
 		"name":      result.Client.Name,
 		"client_id": result.Client.ClientID,
 	})
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]any{
+	httputil.WriteJSONStatus(w, http.StatusCreated, map[string]any{
 		"client":        toClientResponse(result.Client),
 		"client_secret": result.ClientSecret, // shown once
 	})
 }
 
 func (a *API) GetClient(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUID(r.PathValue("id"))
+	id, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -240,12 +238,11 @@ func (a *API) GetClient(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toClientResponse(client))
+	httputil.WriteJSON(w, toClientResponse(client))
 }
 
 func (a *API) UpdateClient(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUID(r.PathValue("id"))
+	id, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -286,12 +283,11 @@ func (a *API) UpdateClient(w http.ResponseWriter, r *http.Request) {
 	a.auditor.Log(r.Context(), actorID, "oauth2_client.update", "oauth2_client", audit.UUIDStr(id), map[string]any{
 		"name": req.Name,
 	})
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toClientResponse(client))
+	httputil.WriteJSON(w, toClientResponse(client))
 }
 
 func (a *API) DeleteClient(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUID(r.PathValue("id"))
+	id, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -306,7 +302,7 @@ func (a *API) DeleteClient(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) RotateSecret(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUID(r.PathValue("id"))
+	id, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -322,8 +318,7 @@ func (a *API) RotateSecret(w http.ResponseWriter, r *http.Request) {
 	}
 	actorID, _ := rbac.IdentityFromContext(r.Context())
 	a.auditor.Log(r.Context(), actorID, "oauth2_client.rotate_secret", "oauth2_client", audit.UUIDStr(id), nil)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"client_secret": result.ClientSecret})
+	httputil.WriteJSON(w, map[string]string{"client_secret": result.ClientSecret})
 }
 
 func (a *API) InspectToken(w http.ResponseWriter, r *http.Request) {
@@ -339,12 +334,11 @@ func (a *API) ListTokens(w http.ResponseWriter, r *http.Request) {
 	if tokens == nil {
 		tokens = []db.ListActiveOAuth2TokensRow{}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tokens)
+	httputil.WriteJSON(w, tokens)
 }
 
 func (a *API) RevokeToken(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUID(r.PathValue("id"))
+	id, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -358,8 +352,3 @@ func (a *API) RevokeToken(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func parseUUID(s string) (pgtype.UUID, error) {
-	var id pgtype.UUID
-	err := id.Scan(s)
-	return id, err
-}

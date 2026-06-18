@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	db "minIDM/db/sqlc"
+	"minIDM/internal/httputil"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -88,6 +89,5 @@ func (h *IntrospectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeInactive(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"active": false})
+	httputil.WriteJSON(w, map[string]any{"active": false})
 }

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	db "minIDM/db/sqlc"
+	"minIDM/internal/httputil"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -259,9 +260,7 @@ func containsScope(scopes []string, target string) bool {
 }
 
 func tokenError(w http.ResponseWriter, errCode, description string, status int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{
+	httputil.WriteJSONStatus(w, status, map[string]string{
 		"error":             errCode,
 		"error_description": description,
 	})

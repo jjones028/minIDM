@@ -2,9 +2,9 @@ package app
 
 import (
 	"crypto/rsa"
-	"encoding/json"
 	db "minIDM/db/sqlc"
 	"minIDM/internal/audit"
+	"minIDM/internal/httputil"
 	"minIDM/internal/identity"
 	"minIDM/internal/oauth2"
 	"minIDM/internal/rbac"
@@ -31,8 +31,7 @@ func NewHandler(queries *db.Queries, signingKey *rsa.PrivateKey, issuer string) 
 	authenticate := rbac.Authenticate(queries)
 	mux.Handle("GET /api/me", authenticate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, _ := rbac.IdentityFromContext(r.Context())
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"id": id})
+		httputil.WriteJSON(w, map[string]any{"id": id})
 	})))
 
 	// Public: app configuration for frontend feature flags.
@@ -49,8 +48,7 @@ func NewHandler(queries *db.Queries, signingKey *rsa.PrivateKey, issuer string) 
 				}
 			}
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]bool{
+		httputil.WriteJSON(w, map[string]bool{
 			"registration_enabled": effective,
 		})
 	})
