@@ -2,11 +2,13 @@ package identity
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	db "minIDM/db/sqlc"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+var ErrSessionNotFound = errors.New("session not found")
 
 type RevokeIdentitySessionHandler struct {
 	q *db.Queries
@@ -38,5 +40,5 @@ func (h *RevokeIdentitySessionHandler) Handle(ctx context.Context, cmd RevokeIde
 			return h.q.DeleteSession(ctx, s.TokenHash)
 		}
 	}
-	return fmt.Errorf("session not found")
+	return ErrSessionNotFound
 }

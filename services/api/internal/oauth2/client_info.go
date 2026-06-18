@@ -1,10 +1,10 @@
 package oauth2
 
 import (
-	"encoding/json"
 	"net/http"
 
 	db "minIDM/db/sqlc"
+	"minIDM/internal/httputil"
 )
 
 // ClientInfoHandler serves GET /api/oauth2/client-info?client_id=X.
@@ -28,8 +28,7 @@ func (h *ClientInfoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_client", http.StatusNotFound)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	httputil.WriteJSON(w, map[string]any{
 		"name":         info.Name,
 		"description":  info.Description,
 		"scopes":       info.Scopes,

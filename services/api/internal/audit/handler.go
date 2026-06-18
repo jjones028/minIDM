@@ -3,6 +3,7 @@ package audit
 import (
 	"encoding/json"
 	db "minIDM/db/sqlc"
+	"minIDM/internal/httputil"
 	"net/http"
 	"strconv"
 	"time"
@@ -36,8 +37,7 @@ func (a *API) ResourceTypes(w http.ResponseWriter, r *http.Request) {
 	if types == nil {
 		types = []string{}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(types)
+	httputil.WriteJSON(w, types)
 }
 
 func (a *API) List(w http.ResponseWriter, r *http.Request) {
@@ -123,6 +123,5 @@ func (a *API) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response{Total: result.Total, Logs: out})
+	httputil.WriteJSON(w, response{Total: result.Total, Logs: out})
 }

@@ -2,11 +2,11 @@ package oauth2
 
 import (
 	"crypto/rsa"
-	"encoding/json"
 	"net/http"
 	"strings"
 
 	db "minIDM/db/sqlc"
+	"minIDM/internal/httputil"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -75,6 +75,5 @@ func (h *UserinfoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		resp["email"] = identity.Email
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	httputil.WriteJSON(w, resp)
 }

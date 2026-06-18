@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	db "minIDM/db/sqlc"
+	"minIDM/internal/httputil"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -30,7 +31,7 @@ func toClientGroupResponse(g db.Oauth2ClientGroup) clientGroupResponse {
 }
 
 func (a *API) ListClientGroups(w http.ResponseWriter, r *http.Request) {
-	clientID, err := parseUUID(r.PathValue("id"))
+	clientID, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -47,12 +48,11 @@ func (a *API) ListClientGroups(w http.ResponseWriter, r *http.Request) {
 	for i, g := range groups {
 		out[i] = toClientGroupResponse(g)
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(out)
+	httputil.WriteJSON(w, out)
 }
 
 func (a *API) CreateClientGroup(w http.ResponseWriter, r *http.Request) {
-	clientID, err := parseUUID(r.PathValue("id"))
+	clientID, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -78,13 +78,11 @@ func (a *API) CreateClientGroup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(toClientGroupResponse(group))
+	httputil.WriteJSONStatus(w, http.StatusCreated, toClientGroupResponse(group))
 }
 
 func (a *API) UpdateClientGroup(w http.ResponseWriter, r *http.Request) {
-	groupID, err := parseUUID(r.PathValue("groupId"))
+	groupID, err := httputil.ParseUUID(r.PathValue("groupId"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -114,12 +112,11 @@ func (a *API) UpdateClientGroup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toClientGroupResponse(group))
+	httputil.WriteJSON(w, toClientGroupResponse(group))
 }
 
 func (a *API) DeleteClientGroup(w http.ResponseWriter, r *http.Request) {
-	groupID, err := parseUUID(r.PathValue("groupId"))
+	groupID, err := httputil.ParseUUID(r.PathValue("groupId"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -134,7 +131,7 @@ func (a *API) DeleteClientGroup(w http.ResponseWriter, r *http.Request) {
 // --- Members of a group ---
 
 func (a *API) ListGroupMembers(w http.ResponseWriter, r *http.Request) {
-	groupID, err := parseUUID(r.PathValue("groupId"))
+	groupID, err := httputil.ParseUUID(r.PathValue("groupId"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -147,12 +144,11 @@ func (a *API) ListGroupMembers(w http.ResponseWriter, r *http.Request) {
 	if rows == nil {
 		rows = []db.ListIdentitiesInClientGroupRow{}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(rows)
+	httputil.WriteJSON(w, rows)
 }
 
 func (a *API) AddGroupMember(w http.ResponseWriter, r *http.Request) {
-	groupID, err := parseUUID(r.PathValue("groupId"))
+	groupID, err := httputil.ParseUUID(r.PathValue("groupId"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -164,7 +160,7 @@ func (a *API) AddGroupMember(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_request", http.StatusBadRequest)
 		return
 	}
-	identityID, err := parseUUID(req.IdentityID)
+	identityID, err := httputil.ParseUUID(req.IdentityID)
 	if err != nil {
 		http.Error(w, "invalid_identity_id", http.StatusBadRequest)
 		return
@@ -180,12 +176,12 @@ func (a *API) AddGroupMember(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) RemoveGroupMember(w http.ResponseWriter, r *http.Request) {
-	groupID, err := parseUUID(r.PathValue("groupId"))
+	groupID, err := httputil.ParseUUID(r.PathValue("groupId"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	identityID, err := parseUUID(r.PathValue("identityId"))
+	identityID, err := httputil.ParseUUID(r.PathValue("identityId"))
 	if err != nil {
 		http.Error(w, "invalid_identity_id", http.StatusBadRequest)
 		return
@@ -203,7 +199,7 @@ func (a *API) RemoveGroupMember(w http.ResponseWriter, r *http.Request) {
 // --- Roles assigned to a group ---
 
 func (a *API) ListGroupRoles(w http.ResponseWriter, r *http.Request) {
-	groupID, err := parseUUID(r.PathValue("groupId"))
+	groupID, err := httputil.ParseUUID(r.PathValue("groupId"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -220,12 +216,11 @@ func (a *API) ListGroupRoles(w http.ResponseWriter, r *http.Request) {
 	for i, role := range roles {
 		out[i] = toClientRoleResponse(role)
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(out)
+	httputil.WriteJSON(w, out)
 }
 
 func (a *API) AddRoleToGroup(w http.ResponseWriter, r *http.Request) {
-	groupID, err := parseUUID(r.PathValue("groupId"))
+	groupID, err := httputil.ParseUUID(r.PathValue("groupId"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -237,7 +232,7 @@ func (a *API) AddRoleToGroup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_request", http.StatusBadRequest)
 		return
 	}
-	roleID, err := parseUUID(req.RoleID)
+	roleID, err := httputil.ParseUUID(req.RoleID)
 	if err != nil {
 		http.Error(w, "invalid_role_id", http.StatusBadRequest)
 		return
@@ -253,12 +248,12 @@ func (a *API) AddRoleToGroup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) RemoveRoleFromGroup(w http.ResponseWriter, r *http.Request) {
-	groupID, err := parseUUID(r.PathValue("groupId"))
+	groupID, err := httputil.ParseUUID(r.PathValue("groupId"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	roleID, err := parseUUID(r.PathValue("roleId"))
+	roleID, err := httputil.ParseUUID(r.PathValue("roleId"))
 	if err != nil {
 		http.Error(w, "invalid_role_id", http.StatusBadRequest)
 		return

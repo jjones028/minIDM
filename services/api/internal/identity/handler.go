@@ -7,6 +7,7 @@ import (
 
 	db "minIDM/db/sqlc"
 	"minIDM/internal/audit"
+	"minIDM/internal/httputil"
 	"minIDM/internal/rbac"
 
 	"github.com/jackc/pgx/v5"
@@ -63,12 +64,11 @@ func (a *API) List(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(identities)
+	httputil.WriteJSON(w, identities)
 }
 
 func (a *API) Get(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUID(r.PathValue("id"))
+	id, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -97,12 +97,11 @@ func (a *API) Get(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: ident.CreatedAt,
 		UpdatedAt: ident.UpdatedAt,
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	httputil.WriteJSON(w, resp)
 }
 
 func (a *API) ListSessions(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUID(r.PathValue("id"))
+	id, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -125,12 +124,11 @@ func (a *API) ListSessions(w http.ResponseWriter, r *http.Request) {
 			ExpiresAt: s.ExpiresAt,
 		}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	httputil.WriteJSON(w, result)
 }
 
 func (a *API) RevokeSession(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUID(r.PathValue("id"))
+	id, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -144,7 +142,7 @@ func (a *API) RevokeSession(w http.ResponseWriter, r *http.Request) {
 		IdentityID: id,
 		Handle:     handle,
 	}); err != nil {
-		if err.Error() == "session not found" {
+		if errors.Is(err, ErrSessionNotFound) {
 			http.Error(w, "not_found", http.StatusNotFound)
 			return
 		}
@@ -225,7 +223,7 @@ func (a *API) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) ResetPassword(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUID(r.PathValue("id"))
+	id, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -254,7 +252,7 @@ func (a *API) ResetPassword(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) SetEnabled(w http.ResponseWriter, r *http.Request) {
-	id, err := parseUUID(r.PathValue("id"))
+	id, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
@@ -280,16 +278,9 @@ func (a *API) SetEnabled(w http.ResponseWriter, r *http.Request) {
 		action = "identity.enable"
 	}
 	a.auditor.Log(r.Context(), actorID, action, "identity", audit.UUIDStr(id), nil)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	httputil.WriteJSON(w, map[string]any{
 		"id":         row.ID,
 		"is_enabled": row.IsEnabled,
 		"updated_at": row.UpdatedAt,
 	})
-}
-
-func parseUUID(s string) (pgtype.UUID, error) {
-	var id pgtype.UUID
-	err := id.Scan(s)
-	return id, err
 }

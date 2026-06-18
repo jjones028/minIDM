@@ -12,6 +12,7 @@ import (
 	"time"
 
 	db "minIDM/db/sqlc"
+	"minIDM/internal/httputil"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -130,6 +131,5 @@ func (h *ConsentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	dest.RawQuery = dq.Encode()
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"redirect_url": dest.String()})
+	httputil.WriteJSON(w, map[string]string{"redirect_url": dest.String()})
 }

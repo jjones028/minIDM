@@ -4,8 +4,9 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/json"
 	"net/http"
+
+	"minIDM/internal/httputil"
 )
 
 // JWKSHandler handles GET /oauth2/jwks.json.
@@ -23,8 +24,7 @@ func (h *JWKSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	jwks := map[string]any{
 		"keys": []any{rsaPublicKeyToJWK(&h.key.PublicKey, h.kid)},
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(jwks)
+	httputil.WriteJSON(w, jwks)
 }
 
 // rsaPublicKeyToJWK converts an RSA public key to a JWK map.
