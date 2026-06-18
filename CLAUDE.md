@@ -532,6 +532,29 @@ Replaced inline create-form cards with modal dialogs on three listing pages to r
 | `RolesPage` | "Create Role" card removed; "New Role" button in Roles card header opens dialog |
 | `OAuthClientsPage` | "Register OAuth2 Client" card removed; "New Client" button in card header opens create dialog. Inline row edit form also moved to a separate edit dialog |
 
+### Server Code Organization Refactoring (completed 2026-06-17)
+Two PRs cleaned up repeated boilerplate and enforced the CQRS structure across all packages.
+
+#### PR #31 — Shared helpers + sentinel errors (`refactor/server-readability`)
+| File | Change |
+|------|--------|
+| `internal/httputil/httputil.go` | **New package** — `ParseUUID(s string) (pgtype.UUID, error)`, `WriteJSON(w, v)`, `WriteJSONStatus(w, status, v)` |
+| `internal/identity/handler.go` | Replaced local `parseUUID` + manual `json.NewEncoder` with `httputil.*` |
+| `internal/rbac/handler.go` | Same: removed local `parseUUID`, uses `httputil.*` |
+| `internal/identity/revoke_identity_session.go` | Added `var ErrSessionNotFound = errors.New("session not found")`; handler matches with `errors.Is` |
+| `internal/identity/list_client_roles.go` | Updated calls from local `parseUUID` to `httputil.ParseUUID` |
+
+#### PR #32 — oauth2 handler split + ops layer (`refactor/oauth2-organization`)
+Goal: `handler.go` = pure wiring (127 lines, down from 366); all HTTP method bodies moved to feature files; no HTTP handler calls `a.q` directly.
+
+| File | Change |
+|------|--------|
+| `internal/oauth2/handler.go` | Now only: `API` struct + `Register`. All HTTP methods removed. |
+| `internal/oauth2/clients.go` | Added `clientResponse`, `toClientResponse`, and all client CRUD HTTP methods (`ListClients`, `CreateClient`, `GetClient`, `UpdateClient`, `DeleteClient`, `RotateSecret`) |
+| `internal/oauth2/list_tokens.go` | Added `RevokeTokenHandler` CQRS struct + `ListTokens`, `RevokeToken`, `InspectToken` HTTP methods (moved from `handler.go`) |
+| `internal/oauth2/client_roles.go` | Added `clientRoleOps struct{ q *db.Queries }` with 10 methods; HTTP handlers call `a.roles.*` instead of `a.q.*` |
+| `internal/oauth2/client_groups.go` | Added `clientGroupOps struct{ q *db.Queries }` with 10 methods; HTTP handlers call `a.groups.*` instead of `a.q.*` |
+
 ## Next Steps for the Next AI
 
 ### Features
@@ -579,16 +602,23 @@ Every new feature should follow this shape:
 
 ```
 internal/<feature>/
-  handler.go         ← Register(mux, ...) + HTTP methods (JSON encode/decode only)
+  handler.go         ← API struct + Register(mux, ...) only — pure wiring, no business logic
   <command_name>.go  ← XxxHandler + XxxCommand struct + Handle(ctx, cmd) → (result, error)
+                        + HTTP handler methods that call Handle (parse → call → encode)
   <query_name>.go    ← XxxHandler + Handle(ctx, ...) → (result, error)
+                        + HTTP handler methods that call Handle
 ```
 
 Rules:
-- HTTP handlers only: parse → call handler → encode. No SQL, no business logic.
+- `handler.go` is pure wiring: defines the `API` struct (fields = handler structs) and `Register` (instantiates handlers + mounts routes). No HTTP method bodies, no SQL.
+- HTTP method bodies live in the same file as their CQRS handler struct — each file owns its domain end-to-end.
+- HTTP handlers: parse → call handler struct → encode. No SQL, no business logic.
 - Business rules (protection, validation, generation) go in command handlers.
-- Use `pgtype.UUID` for all UUIDs; parse with `id.Scan(stringValue)`.
+- Use `pgtype.UUID` for all UUIDs; parse with `httputil.ParseUUID(s)` (`internal/httputil`).
+- Use `httputil.WriteJSON(w, v)` and `httputil.WriteJSONStatus(w, status, v)` — never write `Content-Type` + `json.NewEncoder` by hand.
+- Sentinel errors: define `var ErrX = errors.New(...)` at package level; match with `errors.Is(err, ErrX)`.
 - Errors from command handlers bubble up; HTTP handler maps them to status codes.
+- For large feature domains with many DB operations (e.g., roles/groups), use a grouped ops struct (`type xOps struct{ q *db.Queries }`) with methods for each DB call. HTTP handlers call `a.xOps.*` instead of `a.q.*` directly.
 
 ## Sqlc Workflow
 1. Write migration SQL in `db/migrations/<NNN>_<name>.sql` (use `-- +goose Up` / `-- +goose Down`)
