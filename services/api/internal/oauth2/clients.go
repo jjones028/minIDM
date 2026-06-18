@@ -2,15 +2,54 @@ package oauth2
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 
 	db "minIDM/db/sqlc"
+	"minIDM/internal/audit"
+	"minIDM/internal/httputil"
+	"minIDM/internal/rbac"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 var ErrPublicClient = errors.New("operation not supported for public clients")
+
+// clientResponse is the safe representation of an OAuth2 client (no secret hash).
+type clientResponse struct {
+	ID                pgtype.UUID        `json:"id"`
+	ClientID          string             `json:"client_id"`
+	Name              string             `json:"name"`
+	Description       pgtype.Text        `json:"description"`
+	RedirectURIs      []string           `json:"redirect_uris"`
+	Scopes            []string           `json:"scopes"`
+	IsEnabled         bool               `json:"is_enabled"`
+	IsPublic          bool               `json:"is_public"`
+	AutoConsent       bool               `json:"auto_consent"`
+	AllowRegistration bool               `json:"allow_registration"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
+func toClientResponse(c db.Oauth2Client) clientResponse {
+	return clientResponse{
+		ID:                c.ID,
+		ClientID:          c.ClientID,
+		Name:              c.Name,
+		Description:       c.Description,
+		RedirectURIs:      c.RedirectUris,
+		Scopes:            c.Scopes,
+		IsEnabled:         c.IsEnabled,
+		IsPublic:          !c.ClientSecretHash.Valid,
+		AutoConsent:       c.AutoConsent,
+		AllowRegistration: c.AllowRegistration,
+		CreatedAt:         c.CreatedAt,
+		UpdatedAt:         c.UpdatedAt,
+	}
+}
 
 // ---- Create ----
 
@@ -181,4 +220,162 @@ func (h *RotateSecretHandler) Handle(ctx context.Context, cmd RotateSecretComman
 		return RotateSecretResult{}, err
 	}
 	return RotateSecretResult{ClientSecret: secret}, nil
+}
+
+// --- HTTP handlers ---
+
+func (a *API) ListClients(w http.ResponseWriter, r *http.Request) {
+	clients, err := a.listClients.Handle(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	out := make([]clientResponse, len(clients))
+	for i, c := range clients {
+		out[i] = toClientResponse(c)
+	}
+	httputil.WriteJSON(w, out)
+}
+
+func (a *API) CreateClient(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name              string   `json:"name"`
+		Description       string   `json:"description"`
+		RedirectURIs      []string `json:"redirect_uris"`
+		Scopes            []string `json:"scopes"`
+		AutoConsent       bool     `json:"auto_consent"`
+		IsPublic          bool     `json:"is_public"`
+		AllowRegistration bool     `json:"allow_registration"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid_request", http.StatusBadRequest)
+		return
+	}
+	if req.Name == "" {
+		http.Error(w, "name_required", http.StatusUnprocessableEntity)
+		return
+	}
+	if len(req.RedirectURIs) == 0 {
+		http.Error(w, "redirect_uris_required", http.StatusUnprocessableEntity)
+		return
+	}
+	result, err := a.createClient.Handle(r.Context(), CreateClientCommand{
+		Name:              req.Name,
+		Description:       req.Description,
+		RedirectURIs:      req.RedirectURIs,
+		Scopes:            req.Scopes,
+		AutoConsent:       req.AutoConsent,
+		IsPublic:          req.IsPublic,
+		AllowRegistration: req.AllowRegistration,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	actorID, _ := rbac.IdentityFromContext(r.Context())
+	a.auditor.Log(r.Context(), actorID, "oauth2_client.create", "oauth2_client", audit.UUIDStr(result.Client.ID), map[string]any{
+		"name":      result.Client.Name,
+		"client_id": result.Client.ClientID,
+	})
+	httputil.WriteJSONStatus(w, http.StatusCreated, map[string]any{
+		"client":        toClientResponse(result.Client),
+		"client_secret": result.ClientSecret, // shown once
+	})
+}
+
+func (a *API) GetClient(w http.ResponseWriter, r *http.Request) {
+	id, err := httputil.ParseUUID(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "invalid_id", http.StatusBadRequest)
+		return
+	}
+	client, err := a.getClient.Handle(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			http.Error(w, "not_found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	httputil.WriteJSON(w, toClientResponse(client))
+}
+
+func (a *API) UpdateClient(w http.ResponseWriter, r *http.Request) {
+	id, err := httputil.ParseUUID(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "invalid_id", http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		Name              string   `json:"name"`
+		Description       string   `json:"description"`
+		RedirectURIs      []string `json:"redirect_uris"`
+		Scopes            []string `json:"scopes"`
+		IsEnabled         bool     `json:"is_enabled"`
+		AutoConsent       bool     `json:"auto_consent"`
+		AllowRegistration bool     `json:"allow_registration"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid_request", http.StatusBadRequest)
+		return
+	}
+	if req.Name == "" {
+		http.Error(w, "name_required", http.StatusUnprocessableEntity)
+		return
+	}
+	client, err := a.updateClient.Handle(r.Context(), UpdateClientCommand{
+		ID:                id,
+		Name:              req.Name,
+		Description:       req.Description,
+		RedirectURIs:      req.RedirectURIs,
+		Scopes:            req.Scopes,
+		IsEnabled:         req.IsEnabled,
+		AutoConsent:       req.AutoConsent,
+		AllowRegistration: req.AllowRegistration,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	actorID, _ := rbac.IdentityFromContext(r.Context())
+	a.auditor.Log(r.Context(), actorID, "oauth2_client.update", "oauth2_client", audit.UUIDStr(id), map[string]any{
+		"name": req.Name,
+	})
+	httputil.WriteJSON(w, toClientResponse(client))
+}
+
+func (a *API) DeleteClient(w http.ResponseWriter, r *http.Request) {
+	id, err := httputil.ParseUUID(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "invalid_id", http.StatusBadRequest)
+		return
+	}
+	if err := a.deleteClient.Handle(r.Context(), DeleteClientCommand{ID: id}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	actorID, _ := rbac.IdentityFromContext(r.Context())
+	a.auditor.Log(r.Context(), actorID, "oauth2_client.delete", "oauth2_client", audit.UUIDStr(id), nil)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *API) RotateSecret(w http.ResponseWriter, r *http.Request) {
+	id, err := httputil.ParseUUID(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "invalid_id", http.StatusBadRequest)
+		return
+	}
+	result, err := a.rotateSecret.Handle(r.Context(), RotateSecretCommand{ID: id})
+	if errors.Is(err, ErrPublicClient) {
+		http.Error(w, "public clients do not have a secret", http.StatusUnprocessableEntity)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	actorID, _ := rbac.IdentityFromContext(r.Context())
+	a.auditor.Log(r.Context(), actorID, "oauth2_client.rotate_secret", "oauth2_client", audit.UUIDStr(id), nil)
+	httputil.WriteJSON(w, map[string]string{"client_secret": result.ClientSecret})
 }

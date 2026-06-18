@@ -1,6 +1,7 @@
 package oauth2
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+// clientRoleResponse is the safe representation of a client role.
 type clientRoleResponse struct {
 	ID          pgtype.UUID        `json:"id"`
 	ClientID    pgtype.UUID        `json:"client_id"`
@@ -30,19 +32,103 @@ func toClientRoleResponse(r db.Oauth2ClientRole) clientRoleResponse {
 	}
 }
 
+// clientRoleOps wraps all DB operations for per-client roles.
+// HTTP handlers call these methods instead of a.q directly.
+type clientRoleOps struct{ q *db.Queries }
+
+func (h *clientRoleOps) listForClient(ctx context.Context, clientID pgtype.UUID) ([]db.Oauth2ClientRole, error) {
+	rows, err := h.q.ListClientRoles(ctx, clientID)
+	if err != nil {
+		return nil, err
+	}
+	if rows == nil {
+		rows = []db.Oauth2ClientRole{}
+	}
+	return rows, nil
+}
+
+func (h *clientRoleOps) createRole(ctx context.Context, clientID pgtype.UUID, name, description string) (db.Oauth2ClientRole, error) {
+	return h.q.CreateClientRole(ctx, db.CreateClientRoleParams{
+		ClientID:    clientID,
+		Name:        name,
+		Description: pgtype.Text{String: description, Valid: description != ""},
+	})
+}
+
+func (h *clientRoleOps) updateRole(ctx context.Context, roleID pgtype.UUID, name, description string) (db.Oauth2ClientRole, error) {
+	return h.q.UpdateClientRole(ctx, db.UpdateClientRoleParams{
+		ID:          roleID,
+		Name:        name,
+		Description: pgtype.Text{String: description, Valid: description != ""},
+	})
+}
+
+func (h *clientRoleOps) deleteRole(ctx context.Context, roleID pgtype.UUID) error {
+	return h.q.DeleteClientRole(ctx, roleID)
+}
+
+func (h *clientRoleOps) listMembers(ctx context.Context, roleID pgtype.UUID) ([]db.ListIdentitiesWithClientRoleRow, error) {
+	rows, err := h.q.ListIdentitiesWithClientRole(ctx, roleID)
+	if err != nil {
+		return nil, err
+	}
+	if rows == nil {
+		rows = []db.ListIdentitiesWithClientRoleRow{}
+	}
+	return rows, nil
+}
+
+func (h *clientRoleOps) assignIdentity(ctx context.Context, roleID, identityID pgtype.UUID) error {
+	return h.q.AssignIdentityToClientRole(ctx, db.AssignIdentityToClientRoleParams{
+		IdentityID: identityID,
+		RoleID:     roleID,
+	})
+}
+
+func (h *clientRoleOps) removeIdentity(ctx context.Context, roleID, identityID pgtype.UUID) error {
+	return h.q.RemoveIdentityFromClientRole(ctx, db.RemoveIdentityFromClientRoleParams{
+		IdentityID: identityID,
+		RoleID:     roleID,
+	})
+}
+
+func (h *clientRoleOps) listGroups(ctx context.Context, roleID pgtype.UUID) ([]db.ListGroupsForClientRoleRow, error) {
+	rows, err := h.q.ListGroupsForClientRole(ctx, roleID)
+	if err != nil {
+		return nil, err
+	}
+	if rows == nil {
+		rows = []db.ListGroupsForClientRoleRow{}
+	}
+	return rows, nil
+}
+
+func (h *clientRoleOps) assignGroup(ctx context.Context, roleID, groupID pgtype.UUID) error {
+	return h.q.AssignRoleToClientGroup(ctx, db.AssignRoleToClientGroupParams{
+		GroupID: groupID,
+		RoleID:  roleID,
+	})
+}
+
+func (h *clientRoleOps) removeGroup(ctx context.Context, roleID, groupID pgtype.UUID) error {
+	return h.q.RemoveRoleFromClientGroup(ctx, db.RemoveRoleFromClientGroupParams{
+		GroupID: groupID,
+		RoleID:  roleID,
+	})
+}
+
+// --- HTTP handlers ---
+
 func (a *API) ListClientRoles(w http.ResponseWriter, r *http.Request) {
 	clientID, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	roles, err := a.q.ListClientRoles(r.Context(), clientID)
+	roles, err := a.roles.listForClient(r.Context(), clientID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
-	}
-	if roles == nil {
-		roles = []db.Oauth2ClientRole{}
 	}
 	out := make([]clientRoleResponse, len(roles))
 	for i, role := range roles {
@@ -69,11 +155,7 @@ func (a *API) CreateClientRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name_required", http.StatusUnprocessableEntity)
 		return
 	}
-	role, err := a.q.CreateClientRole(r.Context(), db.CreateClientRoleParams{
-		ClientID:    clientID,
-		Name:        req.Name,
-		Description: pgtype.Text{String: req.Description, Valid: req.Description != ""},
-	})
+	role, err := a.roles.createRole(r.Context(), clientID, req.Name, req.Description)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -99,11 +181,7 @@ func (a *API) UpdateClientRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name_required", http.StatusUnprocessableEntity)
 		return
 	}
-	role, err := a.q.UpdateClientRole(r.Context(), db.UpdateClientRoleParams{
-		ID:          roleID,
-		Name:        req.Name,
-		Description: pgtype.Text{String: req.Description, Valid: req.Description != ""},
-	})
+	role, err := a.roles.updateRole(r.Context(), roleID, req.Name, req.Description)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			http.Error(w, "not_found", http.StatusNotFound)
@@ -121,14 +199,12 @@ func (a *API) DeleteClientRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	if err := a.q.DeleteClientRole(r.Context(), roleID); err != nil {
+	if err := a.roles.deleteRole(r.Context(), roleID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
-
-// --- Identity assignments for a role ---
 
 func (a *API) ListIdentitiesWithRole(w http.ResponseWriter, r *http.Request) {
 	roleID, err := httputil.ParseUUID(r.PathValue("roleId"))
@@ -136,13 +212,10 @@ func (a *API) ListIdentitiesWithRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	rows, err := a.q.ListIdentitiesWithClientRole(r.Context(), roleID)
+	rows, err := a.roles.listMembers(r.Context(), roleID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
-	}
-	if rows == nil {
-		rows = []db.ListIdentitiesWithClientRoleRow{}
 	}
 	httputil.WriteJSON(w, rows)
 }
@@ -165,10 +238,7 @@ func (a *API) AssignIdentityToRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_identity_id", http.StatusBadRequest)
 		return
 	}
-	if err := a.q.AssignIdentityToClientRole(r.Context(), db.AssignIdentityToClientRoleParams{
-		IdentityID: identityID,
-		RoleID:     roleID,
-	}); err != nil {
+	if err := a.roles.assignIdentity(r.Context(), roleID, identityID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -186,17 +256,12 @@ func (a *API) RemoveIdentityFromRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_identity_id", http.StatusBadRequest)
 		return
 	}
-	if err := a.q.RemoveIdentityFromClientRole(r.Context(), db.RemoveIdentityFromClientRoleParams{
-		IdentityID: identityID,
-		RoleID:     roleID,
-	}); err != nil {
+	if err := a.roles.removeIdentity(r.Context(), roleID, identityID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
-
-// --- Group assignments for a role ---
 
 func (a *API) ListGroupsForRole(w http.ResponseWriter, r *http.Request) {
 	roleID, err := httputil.ParseUUID(r.PathValue("roleId"))
@@ -204,13 +269,10 @@ func (a *API) ListGroupsForRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	rows, err := a.q.ListGroupsForClientRole(r.Context(), roleID)
+	rows, err := a.roles.listGroups(r.Context(), roleID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
-	}
-	if rows == nil {
-		rows = []db.ListGroupsForClientRoleRow{}
 	}
 	httputil.WriteJSON(w, rows)
 }
@@ -233,10 +295,7 @@ func (a *API) AssignGroupToRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_group_id", http.StatusBadRequest)
 		return
 	}
-	if err := a.q.AssignRoleToClientGroup(r.Context(), db.AssignRoleToClientGroupParams{
-		GroupID: groupID,
-		RoleID:  roleID,
-	}); err != nil {
+	if err := a.roles.assignGroup(r.Context(), roleID, groupID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -254,10 +313,7 @@ func (a *API) RemoveGroupFromRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_group_id", http.StatusBadRequest)
 		return
 	}
-	if err := a.q.RemoveRoleFromClientGroup(r.Context(), db.RemoveRoleFromClientGroupParams{
-		GroupID: groupID,
-		RoleID:  roleID,
-	}); err != nil {
+	if err := a.roles.removeGroup(r.Context(), roleID, groupID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

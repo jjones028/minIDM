@@ -1,6 +1,7 @@
 package oauth2
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+// clientGroupResponse is the safe representation of a client group.
 type clientGroupResponse struct {
 	ID          pgtype.UUID        `json:"id"`
 	ClientID    pgtype.UUID        `json:"client_id"`
@@ -30,19 +32,103 @@ func toClientGroupResponse(g db.Oauth2ClientGroup) clientGroupResponse {
 	}
 }
 
+// clientGroupOps wraps all DB operations for per-client groups.
+// HTTP handlers call these methods instead of a.q directly.
+type clientGroupOps struct{ q *db.Queries }
+
+func (h *clientGroupOps) listForClient(ctx context.Context, clientID pgtype.UUID) ([]db.Oauth2ClientGroup, error) {
+	rows, err := h.q.ListClientGroups(ctx, clientID)
+	if err != nil {
+		return nil, err
+	}
+	if rows == nil {
+		rows = []db.Oauth2ClientGroup{}
+	}
+	return rows, nil
+}
+
+func (h *clientGroupOps) createGroup(ctx context.Context, clientID pgtype.UUID, name, description string) (db.Oauth2ClientGroup, error) {
+	return h.q.CreateClientGroup(ctx, db.CreateClientGroupParams{
+		ClientID:    clientID,
+		Name:        name,
+		Description: pgtype.Text{String: description, Valid: description != ""},
+	})
+}
+
+func (h *clientGroupOps) updateGroup(ctx context.Context, groupID pgtype.UUID, name, description string) (db.Oauth2ClientGroup, error) {
+	return h.q.UpdateClientGroup(ctx, db.UpdateClientGroupParams{
+		ID:          groupID,
+		Name:        name,
+		Description: pgtype.Text{String: description, Valid: description != ""},
+	})
+}
+
+func (h *clientGroupOps) deleteGroup(ctx context.Context, groupID pgtype.UUID) error {
+	return h.q.DeleteClientGroup(ctx, groupID)
+}
+
+func (h *clientGroupOps) listMembers(ctx context.Context, groupID pgtype.UUID) ([]db.ListIdentitiesInClientGroupRow, error) {
+	rows, err := h.q.ListIdentitiesInClientGroup(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	if rows == nil {
+		rows = []db.ListIdentitiesInClientGroupRow{}
+	}
+	return rows, nil
+}
+
+func (h *clientGroupOps) addMember(ctx context.Context, groupID, identityID pgtype.UUID) error {
+	return h.q.AddIdentityToClientGroup(ctx, db.AddIdentityToClientGroupParams{
+		IdentityID: identityID,
+		GroupID:    groupID,
+	})
+}
+
+func (h *clientGroupOps) removeMember(ctx context.Context, groupID, identityID pgtype.UUID) error {
+	return h.q.RemoveIdentityFromClientGroup(ctx, db.RemoveIdentityFromClientGroupParams{
+		IdentityID: identityID,
+		GroupID:    groupID,
+	})
+}
+
+func (h *clientGroupOps) listRoles(ctx context.Context, groupID pgtype.UUID) ([]db.Oauth2ClientRole, error) {
+	rows, err := h.q.ListRolesForClientGroup(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	if rows == nil {
+		rows = []db.Oauth2ClientRole{}
+	}
+	return rows, nil
+}
+
+func (h *clientGroupOps) addRole(ctx context.Context, groupID, roleID pgtype.UUID) error {
+	return h.q.AssignRoleToClientGroup(ctx, db.AssignRoleToClientGroupParams{
+		GroupID: groupID,
+		RoleID:  roleID,
+	})
+}
+
+func (h *clientGroupOps) removeRole(ctx context.Context, groupID, roleID pgtype.UUID) error {
+	return h.q.RemoveRoleFromClientGroup(ctx, db.RemoveRoleFromClientGroupParams{
+		GroupID: groupID,
+		RoleID:  roleID,
+	})
+}
+
+// --- HTTP handlers ---
+
 func (a *API) ListClientGroups(w http.ResponseWriter, r *http.Request) {
 	clientID, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	groups, err := a.q.ListClientGroups(r.Context(), clientID)
+	groups, err := a.groups.listForClient(r.Context(), clientID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
-	}
-	if groups == nil {
-		groups = []db.Oauth2ClientGroup{}
 	}
 	out := make([]clientGroupResponse, len(groups))
 	for i, g := range groups {
@@ -69,11 +155,7 @@ func (a *API) CreateClientGroup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name_required", http.StatusUnprocessableEntity)
 		return
 	}
-	group, err := a.q.CreateClientGroup(r.Context(), db.CreateClientGroupParams{
-		ClientID:    clientID,
-		Name:        req.Name,
-		Description: pgtype.Text{String: req.Description, Valid: req.Description != ""},
-	})
+	group, err := a.groups.createGroup(r.Context(), clientID, req.Name, req.Description)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -99,11 +181,7 @@ func (a *API) UpdateClientGroup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name_required", http.StatusUnprocessableEntity)
 		return
 	}
-	group, err := a.q.UpdateClientGroup(r.Context(), db.UpdateClientGroupParams{
-		ID:          groupID,
-		Name:        req.Name,
-		Description: pgtype.Text{String: req.Description, Valid: req.Description != ""},
-	})
+	group, err := a.groups.updateGroup(r.Context(), groupID, req.Name, req.Description)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			http.Error(w, "not_found", http.StatusNotFound)
@@ -121,14 +199,12 @@ func (a *API) DeleteClientGroup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	if err := a.q.DeleteClientGroup(r.Context(), groupID); err != nil {
+	if err := a.groups.deleteGroup(r.Context(), groupID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
-
-// --- Members of a group ---
 
 func (a *API) ListGroupMembers(w http.ResponseWriter, r *http.Request) {
 	groupID, err := httputil.ParseUUID(r.PathValue("groupId"))
@@ -136,13 +212,10 @@ func (a *API) ListGroupMembers(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	rows, err := a.q.ListIdentitiesInClientGroup(r.Context(), groupID)
+	rows, err := a.groups.listMembers(r.Context(), groupID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
-	}
-	if rows == nil {
-		rows = []db.ListIdentitiesInClientGroupRow{}
 	}
 	httputil.WriteJSON(w, rows)
 }
@@ -165,10 +238,7 @@ func (a *API) AddGroupMember(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_identity_id", http.StatusBadRequest)
 		return
 	}
-	if err := a.q.AddIdentityToClientGroup(r.Context(), db.AddIdentityToClientGroupParams{
-		IdentityID: identityID,
-		GroupID:    groupID,
-	}); err != nil {
+	if err := a.groups.addMember(r.Context(), groupID, identityID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -186,17 +256,12 @@ func (a *API) RemoveGroupMember(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_identity_id", http.StatusBadRequest)
 		return
 	}
-	if err := a.q.RemoveIdentityFromClientGroup(r.Context(), db.RemoveIdentityFromClientGroupParams{
-		IdentityID: identityID,
-		GroupID:    groupID,
-	}); err != nil {
+	if err := a.groups.removeMember(r.Context(), groupID, identityID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
-
-// --- Roles assigned to a group ---
 
 func (a *API) ListGroupRoles(w http.ResponseWriter, r *http.Request) {
 	groupID, err := httputil.ParseUUID(r.PathValue("groupId"))
@@ -204,13 +269,10 @@ func (a *API) ListGroupRoles(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	roles, err := a.q.ListRolesForClientGroup(r.Context(), groupID)
+	roles, err := a.groups.listRoles(r.Context(), groupID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
-	}
-	if roles == nil {
-		roles = []db.Oauth2ClientRole{}
 	}
 	out := make([]clientRoleResponse, len(roles))
 	for i, role := range roles {
@@ -237,10 +299,7 @@ func (a *API) AddRoleToGroup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_role_id", http.StatusBadRequest)
 		return
 	}
-	if err := a.q.AssignRoleToClientGroup(r.Context(), db.AssignRoleToClientGroupParams{
-		GroupID: groupID,
-		RoleID:  roleID,
-	}); err != nil {
+	if err := a.groups.addRole(r.Context(), groupID, roleID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -258,10 +317,7 @@ func (a *API) RemoveRoleFromGroup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_role_id", http.StatusBadRequest)
 		return
 	}
-	if err := a.q.RemoveRoleFromClientGroup(r.Context(), db.RemoveRoleFromClientGroupParams{
-		GroupID: groupID,
-		RoleID:  roleID,
-	}); err != nil {
+	if err := a.groups.removeRole(r.Context(), groupID, roleID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
