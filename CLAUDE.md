@@ -622,6 +622,7 @@ Rules:
 - `handler.go` is pure wiring: defines `API struct{ svc *Service; auditor *audit.Auditor }` and `Register` (creates service, mounts routes). No SQL, no business logic.
 - `service.go` is the domain layer: `type Service struct{ q *db.Queries }` with one method per business operation. No HTTP types.
 - `db.Queries` (sqlc-generated) is the implicit repository — never add another wrapping layer between it and the service.
+- `Register` takes a named `Config` struct (not positional args) so call sites in `router.go` are self-documenting. `mux *http.ServeMux` stays as the first positional arg — it's the target, not configuration. Example: `func Register(mux *http.ServeMux, cfg Config)` where `Config` holds `Queries`, `ProtectRead`, `ProtectWrite`, `Auditor`, etc.
 - HTTP handlers: parse request → call `a.svc.Method(ctx, args...)` → encode response. Nothing else.
 - Use `pgtype.UUID` for all UUIDs; parse with `httputil.ParseUUID(s)` (`internal/httputil`).
 - Use `httputil.WriteJSON(w, v)` and `httputil.WriteJSONStatus(w, status, v)` — never write `Content-Type` + `json.NewEncoder` by hand.
