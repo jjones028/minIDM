@@ -16,31 +16,15 @@ import (
 
 func Register(mux *http.ServeMux, queries *db.Queries, protectRead, protectWrite func(http.Handler) http.Handler, auditor *audit.Auditor, registrationEnabled bool) {
 	api := &API{
-		q:                     queries,
-		addRegistration:       NewAddRegistrationHandler(queries, registrationEnabled),
-		createIdentity:        NewCreateIdentityHandler(queries),
-		listIdentities:        NewListIdentitiesHandler(queries),
-		getIdentity:           NewGetIdentityHandler(queries),
-		listIdentitySessions:  NewListIdentitySessionsHandler(queries),
-		revokeIdentitySession: NewRevokeIdentitySessionHandler(queries),
-		resetPassword:         NewResetPasswordHandler(queries),
-		setEnabled:            NewSetEnabledHandler(queries),
-		auditor:               auditor,
+		svc:     NewService(queries, registrationEnabled),
+		auditor: auditor,
 	}
 	api.RegisterRoutes(mux, protectRead, protectWrite)
 }
 
 type API struct {
-	q                     *db.Queries
-	addRegistration       *AddRegistrationHandler
-	createIdentity        *CreateIdentityHandler
-	listIdentities        *ListIdentitiesHandler
-	getIdentity           *GetIdentityHandler
-	listIdentitySessions  *ListIdentitySessionsHandler
-	revokeIdentitySession *RevokeIdentitySessionHandler
-	resetPassword         *ResetPasswordHandler
-	setEnabled            *SetEnabledHandler
-	auditor               *audit.Auditor
+	svc     *Service
+	auditor *audit.Auditor
 }
 
 func (a *API) RegisterRoutes(mux *http.ServeMux, protectRead, protectWrite func(http.Handler) http.Handler) {
@@ -59,7 +43,7 @@ func (a *API) RegisterRoutes(mux *http.ServeMux, protectRead, protectWrite func(
 }
 
 func (a *API) List(w http.ResponseWriter, r *http.Request) {
-	identities, err := a.listIdentities.Handle(r.Context())
+	identities, err := a.svc.List(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -73,7 +57,7 @@ func (a *API) Get(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	ident, err := a.getIdentity.Handle(r.Context(), id)
+	ident, err := a.svc.Get(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			http.Error(w, "not_found", http.StatusNotFound)
@@ -106,7 +90,7 @@ func (a *API) ListSessions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	sessions, err := a.listIdentitySessions.Handle(r.Context(), id)
+	sessions, err := a.svc.ListSessions(r.Context(), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -138,10 +122,7 @@ func (a *API) RevokeSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing_handle", http.StatusBadRequest)
 		return
 	}
-	if err := a.revokeIdentitySession.Handle(r.Context(), RevokeIdentitySessionCommand{
-		IdentityID: id,
-		Handle:     handle,
-	}); err != nil {
+	if err := a.svc.RevokeSession(r.Context(), id, handle); err != nil {
 		if errors.Is(err, ErrSessionNotFound) {
 			http.Error(w, "not_found", http.StatusNotFound)
 			return
@@ -156,7 +137,6 @@ func (a *API) RevokeSession(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// Register handles public self-registration (POST /api/register).
 func (a *API) Register(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Email    string `json:"email"`
@@ -170,10 +150,7 @@ func (a *API) Register(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "password_too_short", http.StatusUnprocessableEntity)
 		return
 	}
-	result, err := a.addRegistration.Handle(r.Context(), AddRegistrationCommand{
-		Email:    req.Email,
-		Password: req.Password,
-	})
+	result, err := a.svc.Register(r.Context(), req.Email, req.Password)
 	if errors.Is(err, ErrRegistrationDisabled) {
 		http.Error(w, "registration_disabled", http.StatusForbidden)
 		return
@@ -186,14 +163,12 @@ func (a *API) Register(w http.ResponseWriter, r *http.Request) {
 		"email": req.Email,
 	})
 	if result.Pending {
-		w.WriteHeader(http.StatusAccepted) // 202 — awaiting admin approval
+		w.WriteHeader(http.StatusAccepted)
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
 }
 
-// Create handles admin identity creation (POST /api/identities, identity:write).
-// Created identities are immediately enabled.
 func (a *API) Create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Email    string `json:"email"`
@@ -203,10 +178,7 @@ func (a *API) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_request", http.StatusBadRequest)
 		return
 	}
-	result, err := a.createIdentity.Handle(r.Context(), CreateIdentityCommand{
-		Email:    req.Email,
-		Password: req.Password,
-	})
+	result, err := a.svc.Create(r.Context(), req.Email, req.Password)
 	if errors.Is(err, ErrPasswordTooShort) {
 		http.Error(w, "password_too_short", http.StatusUnprocessableEntity)
 		return
@@ -235,10 +207,7 @@ func (a *API) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_request", http.StatusBadRequest)
 		return
 	}
-	if err := a.resetPassword.Handle(r.Context(), ResetPasswordCommand{
-		IdentityID:  id,
-		NewPassword: req.Password,
-	}); err != nil {
+	if err := a.svc.ResetPassword(r.Context(), id, req.Password); err != nil {
 		if errors.Is(err, ErrPasswordTooShort) {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
@@ -264,10 +233,7 @@ func (a *API) SetEnabled(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_request", http.StatusBadRequest)
 		return
 	}
-	row, err := a.setEnabled.Handle(r.Context(), SetEnabledCommand{
-		IdentityID: id,
-		Enabled:    req.Enabled,
-	})
+	row, err := a.svc.SetEnabled(r.Context(), id, req.Enabled)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

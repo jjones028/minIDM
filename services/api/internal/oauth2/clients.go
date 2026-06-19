@@ -51,8 +51,6 @@ func toClientResponse(c db.Oauth2Client) clientResponse {
 	}
 }
 
-// ---- Create ----
-
 type CreateClientCommand struct {
 	Name              string
 	Description       string
@@ -65,16 +63,30 @@ type CreateClientCommand struct {
 
 type CreateClientResult struct {
 	Client       db.Oauth2Client
-	ClientSecret string // plaintext, shown once
+	ClientSecret string
 }
 
-type CreateClientHandler struct{ q *db.Queries }
-
-func NewCreateClientHandler(q *db.Queries) *CreateClientHandler {
-	return &CreateClientHandler{q: q}
+type UpdateClientCommand struct {
+	ID                pgtype.UUID
+	Name              string
+	Description       string
+	RedirectURIs      []string
+	Scopes            []string
+	IsEnabled         bool
+	AutoConsent       bool
+	AllowRegistration bool
 }
 
-func (h *CreateClientHandler) Handle(ctx context.Context, cmd CreateClientCommand) (*CreateClientResult, error) {
+// ClientService manages OAuth2 client registration and secrets.
+type ClientService struct {
+	q *db.Queries
+}
+
+func NewClientService(q *db.Queries) *ClientService {
+	return &ClientService{q: q}
+}
+
+func (s *ClientService) Create(ctx context.Context, cmd CreateClientCommand) (*CreateClientResult, error) {
 	clientID, err := GenerateClientID()
 	if err != nil {
 		return nil, fmt.Errorf("generating client_id: %w", err)
@@ -99,7 +111,7 @@ func (h *CreateClientHandler) Handle(ctx context.Context, cmd CreateClientComman
 		scopes = []string{"openid", "profile", "email"}
 	}
 
-	client, err := h.q.CreateOAuth2Client(ctx, db.CreateOAuth2ClientParams{
+	client, err := s.q.CreateOAuth2Client(ctx, db.CreateOAuth2ClientParams{
 		ClientID:          clientID,
 		ClientSecretHash:  secretHash,
 		Name:              cmd.Name,
@@ -115,51 +127,16 @@ func (h *CreateClientHandler) Handle(ctx context.Context, cmd CreateClientComman
 	return &CreateClientResult{Client: client, ClientSecret: plainSecret}, nil
 }
 
-// ---- List ----
-
-type ListClientsHandler struct{ q *db.Queries }
-
-func NewListClientsHandler(q *db.Queries) *ListClientsHandler {
-	return &ListClientsHandler{q: q}
+func (s *ClientService) List(ctx context.Context) ([]db.Oauth2Client, error) {
+	return s.q.ListOAuth2Clients(ctx)
 }
 
-func (h *ListClientsHandler) Handle(ctx context.Context) ([]db.Oauth2Client, error) {
-	return h.q.ListOAuth2Clients(ctx)
+func (s *ClientService) Get(ctx context.Context, id pgtype.UUID) (db.Oauth2Client, error) {
+	return s.q.GetOAuth2ClientByID(ctx, id)
 }
 
-// ---- Get ----
-
-type GetClientHandler struct{ q *db.Queries }
-
-func NewGetClientHandler(q *db.Queries) *GetClientHandler {
-	return &GetClientHandler{q: q}
-}
-
-func (h *GetClientHandler) Handle(ctx context.Context, id pgtype.UUID) (db.Oauth2Client, error) {
-	return h.q.GetOAuth2ClientByID(ctx, id)
-}
-
-// ---- Update ----
-
-type UpdateClientCommand struct {
-	ID                pgtype.UUID
-	Name              string
-	Description       string
-	RedirectURIs      []string
-	Scopes            []string
-	IsEnabled         bool
-	AutoConsent       bool
-	AllowRegistration bool
-}
-
-type UpdateClientHandler struct{ q *db.Queries }
-
-func NewUpdateClientHandler(q *db.Queries) *UpdateClientHandler {
-	return &UpdateClientHandler{q: q}
-}
-
-func (h *UpdateClientHandler) Handle(ctx context.Context, cmd UpdateClientCommand) (db.Oauth2Client, error) {
-	return h.q.UpdateOAuth2Client(ctx, db.UpdateOAuth2ClientParams{
+func (s *ClientService) Update(ctx context.Context, cmd UpdateClientCommand) (db.Oauth2Client, error) {
+	return s.q.UpdateOAuth2Client(ctx, db.UpdateOAuth2ClientParams{
 		ID:                cmd.ID,
 		Name:              cmd.Name,
 		Description:       pgtype.Text{String: cmd.Description, Valid: cmd.Description != ""},
@@ -171,61 +148,39 @@ func (h *UpdateClientHandler) Handle(ctx context.Context, cmd UpdateClientComman
 	})
 }
 
-// ---- Delete ----
-
-type DeleteClientCommand struct{ ID pgtype.UUID }
-
-type DeleteClientHandler struct{ q *db.Queries }
-
-func NewDeleteClientHandler(q *db.Queries) *DeleteClientHandler {
-	return &DeleteClientHandler{q: q}
+func (s *ClientService) Delete(ctx context.Context, id pgtype.UUID) error {
+	return s.q.DeleteOAuth2Client(ctx, id)
 }
 
-func (h *DeleteClientHandler) Handle(ctx context.Context, cmd DeleteClientCommand) error {
-	return h.q.DeleteOAuth2Client(ctx, cmd.ID)
-}
-
-// ---- Rotate Secret ----
-
-type RotateSecretCommand struct{ ID pgtype.UUID }
-
-type RotateSecretResult struct{ ClientSecret string }
-
-type RotateSecretHandler struct{ q *db.Queries }
-
-func NewRotateSecretHandler(q *db.Queries) *RotateSecretHandler {
-	return &RotateSecretHandler{q: q}
-}
-
-func (h *RotateSecretHandler) Handle(ctx context.Context, cmd RotateSecretCommand) (RotateSecretResult, error) {
-	client, err := h.q.GetOAuth2ClientByID(ctx, cmd.ID)
+func (s *ClientService) RotateSecret(ctx context.Context, id pgtype.UUID) (string, error) {
+	client, err := s.q.GetOAuth2ClientByID(ctx, id)
 	if err != nil {
-		return RotateSecretResult{}, err
+		return "", err
 	}
 	if !client.ClientSecretHash.Valid {
-		return RotateSecretResult{}, ErrPublicClient
+		return "", ErrPublicClient
 	}
 	secret, err := GenerateClientSecret()
 	if err != nil {
-		return RotateSecretResult{}, fmt.Errorf("generating client_secret: %w", err)
+		return "", fmt.Errorf("generating client_secret: %w", err)
 	}
 	hash, err := HashClientSecret(secret)
 	if err != nil {
-		return RotateSecretResult{}, fmt.Errorf("hashing client_secret: %w", err)
+		return "", fmt.Errorf("hashing client_secret: %w", err)
 	}
-	if err := h.q.UpdateOAuth2ClientSecret(ctx, db.UpdateOAuth2ClientSecretParams{
-		ID:               cmd.ID,
+	if err := s.q.UpdateOAuth2ClientSecret(ctx, db.UpdateOAuth2ClientSecretParams{
+		ID:               id,
 		ClientSecretHash: pgtype.Text{String: hash, Valid: true},
 	}); err != nil {
-		return RotateSecretResult{}, err
+		return "", err
 	}
-	return RotateSecretResult{ClientSecret: secret}, nil
+	return secret, nil
 }
 
 // --- HTTP handlers ---
 
 func (a *API) ListClients(w http.ResponseWriter, r *http.Request) {
-	clients, err := a.listClients.Handle(r.Context())
+	clients, err := a.clients.List(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -259,7 +214,7 @@ func (a *API) CreateClient(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "redirect_uris_required", http.StatusUnprocessableEntity)
 		return
 	}
-	result, err := a.createClient.Handle(r.Context(), CreateClientCommand{
+	result, err := a.clients.Create(r.Context(), CreateClientCommand{
 		Name:              req.Name,
 		Description:       req.Description,
 		RedirectURIs:      req.RedirectURIs,
@@ -279,7 +234,7 @@ func (a *API) CreateClient(w http.ResponseWriter, r *http.Request) {
 	})
 	httputil.WriteJSONStatus(w, http.StatusCreated, map[string]any{
 		"client":        toClientResponse(result.Client),
-		"client_secret": result.ClientSecret, // shown once
+		"client_secret": result.ClientSecret,
 	})
 }
 
@@ -289,7 +244,7 @@ func (a *API) GetClient(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	client, err := a.getClient.Handle(r.Context(), id)
+	client, err := a.clients.Get(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			http.Error(w, "not_found", http.StatusNotFound)
@@ -324,7 +279,7 @@ func (a *API) UpdateClient(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name_required", http.StatusUnprocessableEntity)
 		return
 	}
-	client, err := a.updateClient.Handle(r.Context(), UpdateClientCommand{
+	client, err := a.clients.Update(r.Context(), UpdateClientCommand{
 		ID:                id,
 		Name:              req.Name,
 		Description:       req.Description,
@@ -351,7 +306,7 @@ func (a *API) DeleteClient(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	if err := a.deleteClient.Handle(r.Context(), DeleteClientCommand{ID: id}); err != nil {
+	if err := a.clients.Delete(r.Context(), id); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -366,7 +321,7 @@ func (a *API) RotateSecret(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	result, err := a.rotateSecret.Handle(r.Context(), RotateSecretCommand{ID: id})
+	secret, err := a.clients.RotateSecret(r.Context(), id)
 	if errors.Is(err, ErrPublicClient) {
 		http.Error(w, "public clients do not have a secret", http.StatusUnprocessableEntity)
 		return
@@ -377,5 +332,5 @@ func (a *API) RotateSecret(w http.ResponseWriter, r *http.Request) {
 	}
 	actorID, _ := rbac.IdentityFromContext(r.Context())
 	a.auditor.Log(r.Context(), actorID, "oauth2_client.rotate_secret", "oauth2_client", audit.UUIDStr(id), nil)
-	httputil.WriteJSON(w, map[string]string{"client_secret": result.ClientSecret})
+	httputil.WriteJSON(w, map[string]string{"client_secret": secret})
 }

@@ -3,19 +3,18 @@ package identity
 import (
 	"net/http"
 
-	db "minIDM/db/sqlc"
 	"minIDM/internal/httputil"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type clientRoleAssignment struct {
-	RoleID       pgtype.UUID `json:"role_id"`
-	RoleName     string      `json:"role_name"`
-	Description  pgtype.Text `json:"description"`
-	ClientDBID   pgtype.UUID `json:"client_db_id"`
-	ClientName   string      `json:"client_name"`
-	AppClientID  string      `json:"app_client_id"`
+	RoleID      pgtype.UUID `json:"role_id"`
+	RoleName    string      `json:"role_name"`
+	Description pgtype.Text `json:"description"`
+	ClientDBID  pgtype.UUID `json:"client_db_id"`
+	ClientName  string      `json:"client_name"`
+	AppClientID string      `json:"app_client_id"`
 }
 
 type clientGroupMembership struct {
@@ -33,7 +32,7 @@ func (a *API) ListIdentityClientRoles(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	rows, err := a.q.ListDirectClientRolesForIdentity(r.Context(), id)
+	rows, err := a.svc.ListClientRoles(r.Context(), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -66,10 +65,7 @@ func (a *API) RemoveIdentityClientRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_role_id", http.StatusBadRequest)
 		return
 	}
-	if err := a.q.RemoveIdentityFromClientRole(r.Context(), db.RemoveIdentityFromClientRoleParams{
-		IdentityID: identityID,
-		RoleID:     roleID,
-	}); err != nil {
+	if err := a.svc.RemoveClientRole(r.Context(), identityID, roleID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -82,7 +78,7 @@ func (a *API) ListIdentityClientGroups(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	rows, err := a.q.ListClientGroupsForIdentity(r.Context(), id)
+	rows, err := a.svc.ListClientGroups(r.Context(), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -115,10 +111,7 @@ func (a *API) RemoveIdentityClientGroup(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "invalid_group_id", http.StatusBadRequest)
 		return
 	}
-	if err := a.q.RemoveIdentityFromClientGroup(r.Context(), db.RemoveIdentityFromClientGroupParams{
-		IdentityID: identityID,
-		GroupID:    groupID,
-	}); err != nil {
+	if err := a.svc.RemoveClientGroup(r.Context(), identityID, groupID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

@@ -32,11 +32,10 @@ func toClientRoleResponse(r db.Oauth2ClientRole) clientRoleResponse {
 	}
 }
 
-// clientRoleOps wraps all DB operations for per-client roles.
-// HTTP handlers call these methods instead of a.q directly.
-type clientRoleOps struct{ q *db.Queries }
+// RoleService manages per-client role definitions and membership.
+type RoleService struct{ q *db.Queries }
 
-func (h *clientRoleOps) listForClient(ctx context.Context, clientID pgtype.UUID) ([]db.Oauth2ClientRole, error) {
+func (h *RoleService) listForClient(ctx context.Context, clientID pgtype.UUID) ([]db.Oauth2ClientRole, error) {
 	rows, err := h.q.ListClientRoles(ctx, clientID)
 	if err != nil {
 		return nil, err
@@ -47,7 +46,7 @@ func (h *clientRoleOps) listForClient(ctx context.Context, clientID pgtype.UUID)
 	return rows, nil
 }
 
-func (h *clientRoleOps) createRole(ctx context.Context, clientID pgtype.UUID, name, description string) (db.Oauth2ClientRole, error) {
+func (h *RoleService) createRole(ctx context.Context, clientID pgtype.UUID, name, description string) (db.Oauth2ClientRole, error) {
 	return h.q.CreateClientRole(ctx, db.CreateClientRoleParams{
 		ClientID:    clientID,
 		Name:        name,
@@ -55,7 +54,7 @@ func (h *clientRoleOps) createRole(ctx context.Context, clientID pgtype.UUID, na
 	})
 }
 
-func (h *clientRoleOps) updateRole(ctx context.Context, roleID pgtype.UUID, name, description string) (db.Oauth2ClientRole, error) {
+func (h *RoleService) updateRole(ctx context.Context, roleID pgtype.UUID, name, description string) (db.Oauth2ClientRole, error) {
 	return h.q.UpdateClientRole(ctx, db.UpdateClientRoleParams{
 		ID:          roleID,
 		Name:        name,
@@ -63,11 +62,11 @@ func (h *clientRoleOps) updateRole(ctx context.Context, roleID pgtype.UUID, name
 	})
 }
 
-func (h *clientRoleOps) deleteRole(ctx context.Context, roleID pgtype.UUID) error {
+func (h *RoleService) deleteRole(ctx context.Context, roleID pgtype.UUID) error {
 	return h.q.DeleteClientRole(ctx, roleID)
 }
 
-func (h *clientRoleOps) listMembers(ctx context.Context, roleID pgtype.UUID) ([]db.ListIdentitiesWithClientRoleRow, error) {
+func (h *RoleService) listMembers(ctx context.Context, roleID pgtype.UUID) ([]db.ListIdentitiesWithClientRoleRow, error) {
 	rows, err := h.q.ListIdentitiesWithClientRole(ctx, roleID)
 	if err != nil {
 		return nil, err
@@ -78,21 +77,21 @@ func (h *clientRoleOps) listMembers(ctx context.Context, roleID pgtype.UUID) ([]
 	return rows, nil
 }
 
-func (h *clientRoleOps) assignIdentity(ctx context.Context, roleID, identityID pgtype.UUID) error {
+func (h *RoleService) assignIdentity(ctx context.Context, roleID, identityID pgtype.UUID) error {
 	return h.q.AssignIdentityToClientRole(ctx, db.AssignIdentityToClientRoleParams{
 		IdentityID: identityID,
 		RoleID:     roleID,
 	})
 }
 
-func (h *clientRoleOps) removeIdentity(ctx context.Context, roleID, identityID pgtype.UUID) error {
+func (h *RoleService) removeIdentity(ctx context.Context, roleID, identityID pgtype.UUID) error {
 	return h.q.RemoveIdentityFromClientRole(ctx, db.RemoveIdentityFromClientRoleParams{
 		IdentityID: identityID,
 		RoleID:     roleID,
 	})
 }
 
-func (h *clientRoleOps) listGroups(ctx context.Context, roleID pgtype.UUID) ([]db.ListGroupsForClientRoleRow, error) {
+func (h *RoleService) listGroups(ctx context.Context, roleID pgtype.UUID) ([]db.ListGroupsForClientRoleRow, error) {
 	rows, err := h.q.ListGroupsForClientRole(ctx, roleID)
 	if err != nil {
 		return nil, err
@@ -103,14 +102,14 @@ func (h *clientRoleOps) listGroups(ctx context.Context, roleID pgtype.UUID) ([]d
 	return rows, nil
 }
 
-func (h *clientRoleOps) assignGroup(ctx context.Context, roleID, groupID pgtype.UUID) error {
+func (h *RoleService) assignGroup(ctx context.Context, roleID, groupID pgtype.UUID) error {
 	return h.q.AssignRoleToClientGroup(ctx, db.AssignRoleToClientGroupParams{
 		GroupID: groupID,
 		RoleID:  roleID,
 	})
 }
 
-func (h *clientRoleOps) removeGroup(ctx context.Context, roleID, groupID pgtype.UUID) error {
+func (h *RoleService) removeGroup(ctx context.Context, roleID, groupID pgtype.UUID) error {
 	return h.q.RemoveRoleFromClientGroup(ctx, db.RemoveRoleFromClientGroupParams{
 		GroupID: groupID,
 		RoleID:  roleID,

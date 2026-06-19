@@ -2,34 +2,31 @@ package audit
 
 import (
 	"encoding/json"
-	db "minIDM/db/sqlc"
-	"minIDM/internal/httputil"
 	"net/http"
 	"strconv"
 	"time"
+
+	db "minIDM/db/sqlc"
+	"minIDM/internal/httputil"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type API struct {
-	auditor    *Auditor
-	listEvents *ListEventsHandler
+	svc *Auditor
 }
 
 // Register wires GET /api/audit-logs and GET /api/audit-logs/resource-types,
 // and returns the Auditor for use by other packages.
 func Register(mux *http.ServeMux, q *db.Queries, protectRead func(http.Handler) http.Handler) *Auditor {
-	api := &API{
-		auditor:    New(q),
-		listEvents: NewListEventsHandler(q),
-	}
+	api := &API{svc: New(q)}
 	mux.Handle("GET /api/audit-logs", protectRead(http.HandlerFunc(api.List)))
 	mux.Handle("GET /api/audit-logs/resource-types", protectRead(http.HandlerFunc(api.ResourceTypes)))
-	return api.auditor
+	return api.svc
 }
 
 func (a *API) ResourceTypes(w http.ResponseWriter, r *http.Request) {
-	types, err := a.auditor.q.ListDistinctAuditResourceTypes(r.Context())
+	types, err := a.svc.ResourceTypes(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -80,7 +77,7 @@ func (a *API) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := a.listEvents.Handle(r.Context(), filter)
+	result, err := a.svc.ListEvents(r.Context(), filter)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

@@ -12,37 +12,28 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// ListTokensHandler queries active (non-revoked, non-expired) OAuth2 tokens
-// with the associated identity email for admin display.
-type ListTokensHandler struct {
+// TokenService manages the admin token lifecycle (list, revoke).
+// Token issuance is handled by TokenHandler (OAuth2 protocol).
+type TokenService struct {
 	q *db.Queries
 }
 
-func NewListTokensHandler(q *db.Queries) *ListTokensHandler {
-	return &ListTokensHandler{q: q}
+func NewTokenService(q *db.Queries) *TokenService {
+	return &TokenService{q: q}
 }
 
-func (h *ListTokensHandler) Handle(ctx context.Context) ([]db.ListActiveOAuth2TokensRow, error) {
-	return h.q.ListActiveOAuth2Tokens(ctx)
+func (s *TokenService) List(ctx context.Context) ([]db.ListActiveOAuth2TokensRow, error) {
+	return s.q.ListActiveOAuth2Tokens(ctx)
 }
 
-// RevokeTokenHandler admin-revokes an OAuth2 token by its DB UUID.
-type RevokeTokenHandler struct {
-	q *db.Queries
-}
-
-func NewRevokeTokenHandler(q *db.Queries) *RevokeTokenHandler {
-	return &RevokeTokenHandler{q: q}
-}
-
-func (h *RevokeTokenHandler) Handle(ctx context.Context, id pgtype.UUID) error {
-	return h.q.RevokeOAuth2Token(ctx, id)
+func (s *TokenService) Revoke(ctx context.Context, id pgtype.UUID) error {
+	return s.q.RevokeOAuth2Token(ctx, id)
 }
 
 // --- HTTP handlers ---
 
 func (a *API) ListTokens(w http.ResponseWriter, r *http.Request) {
-	tokens, err := a.listTokens.Handle(r.Context())
+	tokens, err := a.tokens.List(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -59,7 +50,7 @@ func (a *API) RevokeToken(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	if err := a.revokeToken.Handle(r.Context(), id); err != nil {
+	if err := a.tokens.Revoke(r.Context(), id); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
