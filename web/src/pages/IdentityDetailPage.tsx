@@ -45,24 +45,21 @@ export default function IdentityDetailPage() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
+    Promise.allSettled([
       getIdentity(id!), getIdentityRoles(id!), getIdentitySessions(id!),
       listIdentityClientRoles(id!), listIdentityClientGroups(id!),
-    ])
-      .then(([identRes, rolesRes, sessionsRes, clientRolesRes, clientGroupsRes]) => {
-        if (cancelled) return;
-        setIdentity(identRes.data);
-        setRoles(rolesRes.data ?? []);
-        setSessions(sessionsRes.data ?? []);
-        setClientRoles(clientRolesRes.data ?? []);
-        setClientGroups(clientGroupsRes.data ?? []);
-      })
-      .catch(err => {
-        if (isUnauthorized(err)) {
-          setAuthenticated(false);
-          navigate('/login');
-        }
-      });
+    ]).then(([identRes, rolesRes, sessionsRes, clientRolesRes, clientGroupsRes]) => {
+      if (cancelled) return;
+      if (identRes.status === 'rejected') {
+        if (isUnauthorized(identRes.reason)) { setAuthenticated(false); navigate('/login'); }
+        return;
+      }
+      setIdentity(identRes.value.data);
+      if (rolesRes.status === 'fulfilled') setRoles(rolesRes.value.data ?? []);
+      if (sessionsRes.status === 'fulfilled') setSessions(sessionsRes.value.data ?? []);
+      if (clientRolesRes.status === 'fulfilled') setClientRoles(clientRolesRes.value.data ?? []);
+      if (clientGroupsRes.status === 'fulfilled') setClientGroups(clientGroupsRes.value.data ?? []);
+    });
     return () => { cancelled = true; };
   }, [id]);
 

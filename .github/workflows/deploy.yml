@@ -57,6 +57,17 @@ jobs:
       - name: Update kubeconfig
         run: doctl kubernetes cluster kubeconfig save ${{ secrets.CLUSTER_NAME }}
 
+      - name: Run migrations
+        run: |
+          MIGRATE_IMAGE=${{ secrets.REGISTRY_HOST }}/minidm-migrate:${{ github.sha }}
+          kubectl delete job minidm-migrate --ignore-not-found
+          sed "s|image: .*minidm-migrate.*|image: $MIGRATE_IMAGE|" k8s/migrate-job.yaml | kubectl apply -f -
+          kubectl wait --for=condition=complete job/minidm-migrate --timeout=180s
+
+      - name: Print migration logs
+        if: always()
+        run: kubectl logs -l job-name=minidm-migrate --tail=100
+
       - name: Deploy to cluster
         run: |
           IMAGE=${{ secrets.REGISTRY_HOST }}/minidm:${{ github.sha }}
