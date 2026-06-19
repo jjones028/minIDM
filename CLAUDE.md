@@ -555,6 +555,17 @@ Goal: `handler.go` = pure wiring (127 lines, down from 366); all HTTP method bod
 | `internal/oauth2/client_roles.go` | Added `clientRoleOps struct{ q *db.Queries }` with 10 methods; HTTP handlers call `a.roles.*` instead of `a.q.*` |
 | `internal/oauth2/client_groups.go` | Added `clientGroupOps struct{ q *db.Queries }` with 10 methods; HTTP handlers call `a.groups.*` instead of `a.q.*` |
 
+### Service Layer Refactoring (completed 2026-06-18)
+PR #33 (`refactor/service-layer`) replaced per-operation CQRS handler structs with one `Service` per domain. 13 handler files deleted, 3 service files created, net −474 lines. `db.Queries` (sqlc) was already the implicit repository — no new wrapping added.
+
+| Package | Before | After |
+|---------|--------|-------|
+| `session` | `LoginHandler` + `LogoutHandler` in separate files | `service.go`: `Service.Login` / `Service.Logout` |
+| `rbac` | 12 handler structs across 4 files | `service.go`: `Service` with 13 methods |
+| `identity` | 8 handler structs across 8 files | `service.go`: `Service` with 12 methods |
+| `audit` | `ListEventsHandler` in `list_events.go` | Methods on `Auditor`: `ListEvents` / `ResourceTypes` |
+| `oauth2` | per-op handler structs, `clientRoleOps`, `clientGroupOps` | `ClientService`, `TokenService`, `RoleService`, `GroupService` |
+
 ## Next Steps for the Next AI
 
 ### Features
@@ -587,7 +598,7 @@ Goal: `handler.go` = pure wiring (127 lines, down from 366); all HTTP method bod
 
 13. **Scope re-validation on refresh token grant** (`internal/oauth2/token.go:handleRefreshToken`): When a refresh token is exchanged, `stored.Scopes` are carried forward to the new access token without checking whether the client still has those scopes. If an admin narrows a client's `scopes` after token issuance, old refresh tokens continue producing over-privileged access tokens until they expire (30 days). Fix: after fetching the stored token, intersect `stored.Scopes` with `client.Scopes` and use the intersection for the new token.
 
-14. **Track failed login attempts / account lockout** (`internal/session/login.go`): There is no mechanism to detect or respond to credential-stuffing. Add a `login_attempts` table (`identity_id`, `attempted_at`, `success BOOL`) and lock the account (or impose a delay) after N failures within a window. Alternatively, use an in-memory per-email token bucket as a simpler first step. Log failures to the audit log under a new `session.login_failed` action.
+14. **Track failed login attempts / account lockout** (`internal/session/service.go:Service.Login`): There is no mechanism to detect or respond to credential-stuffing. Add a `login_attempts` table (`identity_id`, `attempted_at`, `success BOOL`) and lock the account (or impose a delay) after N failures within a window. Alternatively, use an in-memory per-email token bucket as a simpler first step. Log failures to the audit log under a new `session.login_failed` action.
 
 #### Low — compliance and operational
 
@@ -597,28 +608,26 @@ Goal: `handler.go` = pure wiring (127 lines, down from 366); all HTTP method bod
 
 17. **`state` parameter enforcement in authorize flow** (`internal/oauth2/authorize.go`): `state` is read but not required. OIDC clients that omit `state` lose their CSRF protection for the redirect. Log a warning, or (better) return `invalid_request` if `state` is absent, to enforce best practice for all downstream clients.
 
-## CQRS Pattern (for new features)
-Every new feature should follow this shape:
+## Server Package Structure (for new features)
+Every feature package follows this shape:
 
 ```
 internal/<feature>/
-  handler.go         ← API struct + Register(mux, ...) only — pure wiring, no business logic
-  <command_name>.go  ← XxxHandler + XxxCommand struct + Handle(ctx, cmd) → (result, error)
-                        + HTTP handler methods that call Handle (parse → call → encode)
-  <query_name>.go    ← XxxHandler + Handle(ctx, ...) → (result, error)
-                        + HTTP handler methods that call Handle
+  handler.go   ← API struct + Register(mux, ...) only — pure wiring, no business logic
+  service.go   ← Service struct with all business logic methods
+  *.go         ← HTTP handler methods on *API (may live in handler.go or separate files)
 ```
 
 Rules:
-- `handler.go` is pure wiring: defines the `API` struct (fields = handler structs) and `Register` (instantiates handlers + mounts routes). No HTTP method bodies, no SQL.
-- HTTP method bodies live in the same file as their CQRS handler struct — each file owns its domain end-to-end.
-- HTTP handlers: parse → call handler struct → encode. No SQL, no business logic.
-- Business rules (protection, validation, generation) go in command handlers.
+- `handler.go` is pure wiring: defines `API struct{ svc *Service; auditor *audit.Auditor }` and `Register` (creates service, mounts routes). No SQL, no business logic.
+- `service.go` is the domain layer: `type Service struct{ q *db.Queries }` with one method per business operation. No HTTP types.
+- `db.Queries` (sqlc-generated) is the implicit repository — never add another wrapping layer between it and the service.
+- HTTP handlers: parse request → call `a.svc.Method(ctx, args...)` → encode response. Nothing else.
 - Use `pgtype.UUID` for all UUIDs; parse with `httputil.ParseUUID(s)` (`internal/httputil`).
 - Use `httputil.WriteJSON(w, v)` and `httputil.WriteJSONStatus(w, status, v)` — never write `Content-Type` + `json.NewEncoder` by hand.
-- Sentinel errors: define `var ErrX = errors.New(...)` at package level; match with `errors.Is(err, ErrX)`.
-- Errors from command handlers bubble up; HTTP handler maps them to status codes.
-- For large feature domains with many DB operations (e.g., roles/groups), use a grouped ops struct (`type xOps struct{ q *db.Queries }`) with methods for each DB call. HTTP handlers call `a.xOps.*` instead of `a.q.*` directly.
+- Sentinel errors: define `var ErrX = errors.New(...)` in `service.go`; match with `errors.Is(err, ErrX)` in HTTP handlers.
+- For packages with many distinct sub-domains (e.g., `oauth2`), use one named service per sub-domain (`ClientService`, `TokenService`, `RoleService`, `GroupService`) rather than a single monolithic service.
+- **oauth2 protocol handlers** (`AuthorizeHandler`, `TokenHandler`, `IntrospectHandler`, etc.) implement `http.Handler` directly and live in their own files. They are not domain services — they handle complex OAuth2 protocol flows and are wired directly in `handler.go`.
 
 ## Sqlc Workflow
 1. Write migration SQL in `db/migrations/<NNN>_<name>.sql` (use `-- +goose Up` / `-- +goose Down`)
