@@ -566,6 +566,35 @@ PR #33 (`refactor/service-layer`) replaced per-operation CQRS handler structs wi
 | `audit` | `ListEventsHandler` in `list_events.go` | Methods on `Auditor`: `ListEvents` / `ResourceTypes` |
 | `oauth2` | per-op handler structs, `clientRoleOps`, `clientGroupOps` | `ClientService`, `TokenService`, `RoleService`, `GroupService` |
 
+### Domain Separation Refactoring (completed 2026-06-18)
+Follow-up to PR #33. `identity.Service` had accumulated session and OAuth2 client-role operations that belong in other domains. Moved each to its owner.
+
+#### `internal/password` (new package)
+`HashPassword`/`VerifyPassword` extracted from `identity/crypto.go` into `internal/password` (`Hash`, `Verify`). This broke the `session → identity` import that previously prevented `identity` from importing `session`.
+
+#### `session.Service` gains identity-admin methods
+| Method | Description |
+|--------|-------------|
+| `ListForIdentity(ctx, identityID)` | Lists active sessions for an identity |
+| `RevokeByHandle(ctx, identityID, handle)` | Revokes a session by opaque handle |
+| `SessionHandle(tokenHash) string` | Exported helper: first 8 hex chars of token_hash |
+| `ErrSessionNotFound` | Moved from `identity` package |
+
+#### `oauth2.RoleService` / `oauth2.GroupService` gain identity-facing methods
+| Method | Description |
+|--------|-------------|
+| `RoleService.ListForIdentity(ctx, identityID)` | Direct client role assignments for an identity |
+| `RoleService.RemoveFromIdentity(ctx, identityID, roleID)` | Remove a direct role assignment |
+| `GroupService.ListForIdentity(ctx, identityID)` | Client group memberships for an identity |
+| `GroupService.RemoveFromIdentity(ctx, identityID, groupID)` | Remove an identity from a group |
+| `NewRoleService(q)` / `NewGroupService(q)` | Exported constructors for use in `router.go` |
+
+#### `identity.Service` after cleanup
+Now owns only: `Register`, `Create`, `List`, `Get`, `SetEnabled`, `ResetPassword`. No session or OAuth2 knowledge.
+
+#### `identity.API` as coordination point
+`identity.Config` gains `Sessions *session.Service`, `Roles *oauth2.RoleService`, `Groups *oauth2.GroupService`. The HTTP handlers for `/api/identities/{id}/sessions` and `/api/identities/{id}/client-roles` call those services directly. `router.go` creates the shared service instances and passes them to both `identity.Config` and (implicitly, via their own construction) `oauth2.Register`.
+
 ## Next Steps for the Next AI
 
 ### Features
@@ -623,6 +652,8 @@ Rules:
 - `service.go` is the domain layer: `type Service struct{ q *db.Queries }` with one method per business operation. No HTTP types.
 - `db.Queries` (sqlc-generated) is the implicit repository — never add another wrapping layer between it and the service.
 - `Register` takes a named `Config` struct (not positional args) so call sites in `router.go` are self-documenting. `mux *http.ServeMux` stays as the first positional arg — it's the target, not configuration. Example: `func Register(mux *http.ServeMux, cfg Config)` where `Config` holds `Queries`, `ProtectRead`, `ProtectWrite`, `Auditor`, etc.
+- **Cross-domain dependencies**: when an HTTP handler aggregates data from multiple domains (e.g., the identity detail page fetches session and OAuth2 role data), the `API` struct holds the foreign service as an explicit field (`sessions *session.Service`, `roles *oauth2.RoleService`) and `Config` carries it in. `router.go` creates the shared service instances and passes them to all consumers. Do not call foreign services from within a `Service` method — only HTTP handlers coordinate across domains.
+- **Shared crypto**: password hashing lives in `internal/password` (`Hash`, `Verify`) so both `identity` and `session` can use it without an import cycle.
 - HTTP handlers: parse request → call `a.svc.Method(ctx, args...)` → encode response. Nothing else.
 - Use `pgtype.UUID` for all UUIDs; parse with `httputil.ParseUUID(s)` (`internal/httputil`).
 - Use `httputil.WriteJSON(w, v)` and `httputil.WriteJSONStatus(w, status, v)` — never write `Content-Type` + `json.NewEncoder` by hand.
