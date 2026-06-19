@@ -10,29 +10,36 @@ import (
 	"minIDM/internal/httputil"
 )
 
+type Config struct {
+	Queries      *db.Queries
+	ProtectRead  func(http.Handler) http.Handler
+	ProtectWrite func(http.Handler) http.Handler
+	Auditor      *audit.Auditor
+}
+
 type API struct {
 	svc     *Service
 	auditor *audit.Auditor
 }
 
-func RegisterRoleRoutes(mux *http.ServeMux, q *db.Queries, protectRead, protectWrite func(http.Handler) http.Handler, auditor *audit.Auditor) {
+func RegisterRoleRoutes(mux *http.ServeMux, cfg Config) {
 	api := &API{
-		svc:     NewService(q),
-		auditor: auditor,
+		svc:     NewService(cfg.Queries),
+		auditor: cfg.Auditor,
 	}
 
-	mux.Handle("GET /api/roles", protectRead(http.HandlerFunc(api.ListRoles)))
-	mux.Handle("POST /api/roles", protectWrite(http.HandlerFunc(api.CreateRole)))
-	mux.Handle("PATCH /api/roles/{id}", protectWrite(http.HandlerFunc(api.UpdateRole)))
-	mux.Handle("DELETE /api/roles/{id}", protectWrite(http.HandlerFunc(api.DeleteRole)))
-	mux.Handle("GET /api/roles/{id}/permissions", protectRead(http.HandlerFunc(api.ListRolePermissions)))
-	mux.Handle("POST /api/roles/{id}/permissions", protectWrite(http.HandlerFunc(api.AddRolePermission)))
-	mux.Handle("DELETE /api/roles/{id}/permissions/{permId}", protectWrite(http.HandlerFunc(api.RemoveRolePermission)))
-	mux.Handle("GET /api/resources", protectRead(http.HandlerFunc(api.ListResources)))
-	mux.Handle("GET /api/actions", protectRead(http.HandlerFunc(api.ListActions)))
-	mux.Handle("GET /api/identities/{id}/roles", protectRead(http.HandlerFunc(api.ListIdentityRoles)))
-	mux.Handle("POST /api/identities/{id}/roles", protectWrite(http.HandlerFunc(api.AssignRole)))
-	mux.Handle("DELETE /api/identities/{id}/roles/{roleId}", protectWrite(http.HandlerFunc(api.RemoveRole)))
+	mux.Handle("GET /api/roles", cfg.ProtectRead(http.HandlerFunc(api.ListRoles)))
+	mux.Handle("POST /api/roles", cfg.ProtectWrite(http.HandlerFunc(api.CreateRole)))
+	mux.Handle("PATCH /api/roles/{id}", cfg.ProtectWrite(http.HandlerFunc(api.UpdateRole)))
+	mux.Handle("DELETE /api/roles/{id}", cfg.ProtectWrite(http.HandlerFunc(api.DeleteRole)))
+	mux.Handle("GET /api/roles/{id}/permissions", cfg.ProtectRead(http.HandlerFunc(api.ListRolePermissions)))
+	mux.Handle("POST /api/roles/{id}/permissions", cfg.ProtectWrite(http.HandlerFunc(api.AddRolePermission)))
+	mux.Handle("DELETE /api/roles/{id}/permissions/{permId}", cfg.ProtectWrite(http.HandlerFunc(api.RemoveRolePermission)))
+	mux.Handle("GET /api/resources", cfg.ProtectRead(http.HandlerFunc(api.ListResources)))
+	mux.Handle("GET /api/actions", cfg.ProtectRead(http.HandlerFunc(api.ListActions)))
+	mux.Handle("GET /api/identities/{id}/roles", cfg.ProtectRead(http.HandlerFunc(api.ListIdentityRoles)))
+	mux.Handle("POST /api/identities/{id}/roles", cfg.ProtectWrite(http.HandlerFunc(api.AssignRole)))
+	mux.Handle("DELETE /api/identities/{id}/roles/{roleId}", cfg.ProtectWrite(http.HandlerFunc(api.RemoveRole)))
 }
 
 func (a *API) ListRoles(w http.ResponseWriter, r *http.Request) {

@@ -22,10 +22,17 @@ func NewHandler(queries *db.Queries, signingKey *rsa.PrivateKey, issuer string) 
 
 	// Audit log route (requires audit_log:read) + returns the shared Auditor.
 	protectAuditRead := chain(rbac.Authenticate(queries), rbac.Require("audit_log", "read", queries))
-	auditor := audit.Register(mux, queries, protectAuditRead)
+	auditor := audit.Register(mux, audit.Config{
+		Queries:     queries,
+		ProtectRead: protectAuditRead,
+	})
 
 	// Public: session management
-	session.Register(mux, queries, secureCookies, auditor)
+	session.Register(mux, session.Config{
+		Queries:       queries,
+		SecureCookies: secureCookies,
+		Auditor:       auditor,
+	})
 
 	// Auth-only: /api/me lets the frontend check whether the cookie is still valid.
 	authenticate := rbac.Authenticate(queries)
@@ -56,17 +63,36 @@ func NewHandler(queries *db.Queries, signingKey *rsa.PrivateKey, issuer string) 
 	// Protected: identity routes
 	protectIdentityRead := chain(rbac.Authenticate(queries), rbac.Require("identity", "read", queries))
 	protectIdentityWrite := chain(rbac.Authenticate(queries), rbac.Require("identity", "write", queries))
-	identity.Register(mux, queries, protectIdentityRead, protectIdentityWrite, auditor, registrationEnabled)
+	identity.Register(mux, identity.Config{
+		Queries:             queries,
+		ProtectRead:         protectIdentityRead,
+		ProtectWrite:        protectIdentityWrite,
+		Auditor:             auditor,
+		RegistrationEnabled: registrationEnabled,
+	})
 
 	// Protected: role management routes
 	protectRoleRead := chain(rbac.Authenticate(queries), rbac.Require("role", "read", queries))
 	protectRoleWrite := chain(rbac.Authenticate(queries), rbac.Require("role", "write", queries))
-	rbac.RegisterRoleRoutes(mux, queries, protectRoleRead, protectRoleWrite, auditor)
+	rbac.RegisterRoleRoutes(mux, rbac.Config{
+		Queries:      queries,
+		ProtectRead:  protectRoleRead,
+		ProtectWrite: protectRoleWrite,
+		Auditor:      auditor,
+	})
 
 	// OAuth2/OIDC: discovery + protocol endpoints (public) + admin client CRUD (RBAC)
 	protectClientRead := chain(rbac.Authenticate(queries), rbac.Require("oauth2_client", "read", queries))
 	protectClientWrite := chain(rbac.Authenticate(queries), rbac.Require("oauth2_client", "write", queries))
-	oauth2.Register(mux, queries, signingKey, issuer, protectClientRead, protectClientWrite, auditor, rbac.Authenticate(queries))
+	oauth2.Register(mux, oauth2.Config{
+		Queries:      queries,
+		Key:          signingKey,
+		Issuer:       issuer,
+		ProtectRead:  protectClientRead,
+		ProtectWrite: protectClientWrite,
+		Auditor:      auditor,
+		Authenticate: rbac.Authenticate(queries),
+	})
 
 	// Catch-all for Frontend (must be last)
 	mux.Handle("/", StaticHandler())

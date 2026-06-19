@@ -11,17 +11,23 @@ import (
 
 const cookieName = "session"
 
+type Config struct {
+	Queries       *db.Queries
+	SecureCookies bool
+	Auditor       *audit.Auditor
+}
+
 type API struct {
 	svc           *Service
 	secureCookies bool
 	auditor       *audit.Auditor
 }
 
-func Register(mux *http.ServeMux, queries *db.Queries, secureCookies bool, auditor *audit.Auditor) {
+func Register(mux *http.ServeMux, cfg Config) {
 	api := &API{
-		svc:           NewService(queries),
-		secureCookies: secureCookies,
-		auditor:       auditor,
+		svc:           NewService(cfg.Queries),
+		secureCookies: cfg.SecureCookies,
+		auditor:       cfg.Auditor,
 	}
 	mux.HandleFunc("POST /api/login", api.Login)
 	mux.HandleFunc("DELETE /api/session", api.Logout)

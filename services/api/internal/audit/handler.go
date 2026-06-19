@@ -12,16 +12,21 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Config struct {
+	Queries     *db.Queries
+	ProtectRead func(http.Handler) http.Handler
+}
+
 type API struct {
 	svc *Auditor
 }
 
 // Register wires GET /api/audit-logs and GET /api/audit-logs/resource-types,
 // and returns the Auditor for use by other packages.
-func Register(mux *http.ServeMux, q *db.Queries, protectRead func(http.Handler) http.Handler) *Auditor {
-	api := &API{svc: New(q)}
-	mux.Handle("GET /api/audit-logs", protectRead(http.HandlerFunc(api.List)))
-	mux.Handle("GET /api/audit-logs/resource-types", protectRead(http.HandlerFunc(api.ResourceTypes)))
+func Register(mux *http.ServeMux, cfg Config) *Auditor {
+	api := &API{svc: New(cfg.Queries)}
+	mux.Handle("GET /api/audit-logs", cfg.ProtectRead(http.HandlerFunc(api.List)))
+	mux.Handle("GET /api/audit-logs/resource-types", cfg.ProtectRead(http.HandlerFunc(api.ResourceTypes)))
 	return api.svc
 }
 

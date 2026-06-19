@@ -14,12 +14,20 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-func Register(mux *http.ServeMux, queries *db.Queries, protectRead, protectWrite func(http.Handler) http.Handler, auditor *audit.Auditor, registrationEnabled bool) {
+type Config struct {
+	Queries             *db.Queries
+	ProtectRead         func(http.Handler) http.Handler
+	ProtectWrite        func(http.Handler) http.Handler
+	Auditor             *audit.Auditor
+	RegistrationEnabled bool
+}
+
+func Register(mux *http.ServeMux, cfg Config) {
 	api := &API{
-		svc:     NewService(queries, registrationEnabled),
-		auditor: auditor,
+		svc:     NewService(cfg.Queries, cfg.RegistrationEnabled),
+		auditor: cfg.Auditor,
 	}
-	api.RegisterRoutes(mux, protectRead, protectWrite)
+	api.RegisterRoutes(mux, cfg.ProtectRead, cfg.ProtectWrite)
 }
 
 type API struct {
