@@ -14,7 +14,6 @@ import (
 var (
 	ErrRegistrationDisabled = errors.New("registration is disabled")
 	ErrPasswordTooShort     = errors.New("password must be at least 8 characters")
-	ErrSessionNotFound      = errors.New("session not found")
 )
 
 type AddRegistrationResult struct {
@@ -118,28 +117,6 @@ func (s *Service) Get(ctx context.Context, id pgtype.UUID) (db.Identity, error) 
 	return s.q.GetIdentityByID(ctx, id)
 }
 
-func (s *Service) ListSessions(ctx context.Context, id pgtype.UUID) ([]db.Session, error) {
-	return s.q.ListActiveSessionsByIdentityID(ctx, id)
-}
-
-// sessionHandle returns the first 8 hex chars of the stored token_hash as an opaque handle.
-func sessionHandle(tokenHash string) string {
-	return tokenHash[:8]
-}
-
-func (s *Service) RevokeSession(ctx context.Context, identityID pgtype.UUID, handle string) error {
-	sessions, err := s.q.ListActiveSessionsByIdentityID(ctx, identityID)
-	if err != nil {
-		return err
-	}
-	for _, sess := range sessions {
-		if sessionHandle(sess.TokenHash) == handle {
-			return s.q.DeleteSession(ctx, sess.TokenHash)
-		}
-	}
-	return ErrSessionNotFound
-}
-
 func (s *Service) ResetPassword(ctx context.Context, id pgtype.UUID, password string) error {
 	if len(password) < 8 {
 		return ErrPasswordTooShort
@@ -165,24 +142,3 @@ func (s *Service) SetEnabled(ctx context.Context, id pgtype.UUID, enabled bool) 
 	})
 }
 
-func (s *Service) ListClientRoles(ctx context.Context, id pgtype.UUID) ([]db.ListDirectClientRolesForIdentityRow, error) {
-	return s.q.ListDirectClientRolesForIdentity(ctx, id)
-}
-
-func (s *Service) RemoveClientRole(ctx context.Context, identityID, roleID pgtype.UUID) error {
-	return s.q.RemoveIdentityFromClientRole(ctx, db.RemoveIdentityFromClientRoleParams{
-		IdentityID: identityID,
-		RoleID:     roleID,
-	})
-}
-
-func (s *Service) ListClientGroups(ctx context.Context, id pgtype.UUID) ([]db.ListClientGroupsForIdentityRow, error) {
-	return s.q.ListClientGroupsForIdentity(ctx, id)
-}
-
-func (s *Service) RemoveClientGroup(ctx context.Context, identityID, groupID pgtype.UUID) error {
-	return s.q.RemoveIdentityFromClientGroup(ctx, db.RemoveIdentityFromClientGroupParams{
-		IdentityID: identityID,
-		GroupID:    groupID,
-	})
-}

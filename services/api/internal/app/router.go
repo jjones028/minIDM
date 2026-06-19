@@ -27,6 +27,11 @@ func NewHandler(queries *db.Queries, signingKey *rsa.PrivateKey, issuer string) 
 		ProtectRead: protectAuditRead,
 	})
 
+	// Shared services used by multiple packages.
+	sessionSvc := session.NewService(queries)
+	roleSvc := oauth2.NewRoleService(queries)
+	groupSvc := oauth2.NewGroupService(queries)
+
 	// Public: session management
 	session.Register(mux, session.Config{
 		Queries:       queries,
@@ -69,6 +74,9 @@ func NewHandler(queries *db.Queries, signingKey *rsa.PrivateKey, issuer string) 
 		ProtectWrite:        protectIdentityWrite,
 		Auditor:             auditor,
 		RegistrationEnabled: registrationEnabled,
+		Sessions:            sessionSvc,
+		Roles:               roleSvc,
+		Groups:              groupSvc,
 	})
 
 	// Protected: role management routes

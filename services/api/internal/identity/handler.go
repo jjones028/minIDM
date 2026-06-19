@@ -8,7 +8,9 @@ import (
 	db "minIDM/db/sqlc"
 	"minIDM/internal/audit"
 	"minIDM/internal/httputil"
+	"minIDM/internal/oauth2"
 	"minIDM/internal/rbac"
+	"minIDM/internal/session"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -20,19 +22,28 @@ type Config struct {
 	ProtectWrite        func(http.Handler) http.Handler
 	Auditor             *audit.Auditor
 	RegistrationEnabled bool
+	Sessions            *session.Service
+	Roles               *oauth2.RoleService
+	Groups              *oauth2.GroupService
 }
 
 func Register(mux *http.ServeMux, cfg Config) {
 	api := &API{
 		svc:     NewService(cfg.Queries, cfg.RegistrationEnabled),
-		auditor: cfg.Auditor,
+		sessions: cfg.Sessions,
+		roles:    cfg.Roles,
+		groups:   cfg.Groups,
+		auditor:  cfg.Auditor,
 	}
 	api.RegisterRoutes(mux, cfg.ProtectRead, cfg.ProtectWrite)
 }
 
 type API struct {
-	svc     *Service
-	auditor *audit.Auditor
+	svc      *Service
+	sessions *session.Service
+	roles    *oauth2.RoleService
+	groups   *oauth2.GroupService
+	auditor  *audit.Auditor
 }
 
 func (a *API) RegisterRoutes(mux *http.ServeMux, protectRead, protectWrite func(http.Handler) http.Handler) {
@@ -98,7 +109,7 @@ func (a *API) ListSessions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	sessions, err := a.svc.ListSessions(r.Context(), id)
+	sessions, err := a.sessions.ListForIdentity(r.Context(), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -111,7 +122,7 @@ func (a *API) ListSessions(w http.ResponseWriter, r *http.Request) {
 	result := make([]sessionInfo, len(sessions))
 	for i, s := range sessions {
 		result[i] = sessionInfo{
-			Handle:    sessionHandle(s.TokenHash),
+			Handle:    session.SessionHandle(s.TokenHash),
 			CreatedAt: s.CreatedAt,
 			ExpiresAt: s.ExpiresAt,
 		}
@@ -130,8 +141,8 @@ func (a *API) RevokeSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing_handle", http.StatusBadRequest)
 		return
 	}
-	if err := a.svc.RevokeSession(r.Context(), id, handle); err != nil {
-		if errors.Is(err, ErrSessionNotFound) {
+	if err := a.sessions.RevokeByHandle(r.Context(), id, handle); err != nil {
+		if errors.Is(err, session.ErrSessionNotFound) {
 			http.Error(w, "not_found", http.StatusNotFound)
 			return
 		}
