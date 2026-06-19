@@ -13,7 +13,7 @@
 - **Dev Proxy**: In development, Vite proxies `/api` → `http://localhost:8080`, making all requests same-origin so cookies work without CORS changes.
 - **CQRS Pattern**: Each feature has `handler.go` (HTTP wiring + JSON) + per-command/query files. Business rules live in command handlers, never in HTTP handlers.
 
-## Current State (as of 2026-06-17)
+## Current State (as of 2026-06-19)
 
 ### Completed
 - **Identity registration & listing** — full CQRS-based flow with Argon2id password hashing.
@@ -565,6 +565,27 @@ PR #33 (`refactor/service-layer`) replaced per-operation CQRS handler structs wi
 | `identity` | 8 handler structs across 8 files | `service.go`: `Service` with 12 methods |
 | `audit` | `ListEventsHandler` in `list_events.go` | Methods on `Auditor`: `ListEvents` / `ResourceTypes` |
 | `oauth2` | per-op handler structs, `clientRoleOps`, `clientGroupOps` | `ClientService`, `TokenService`, `RoleService`, `GroupService` |
+
+### Production Bug Fixes (completed 2026-06-19)
+
+#### Identity detail page blank screen
+`IdentityDetailPage.tsx` used `Promise.all` for its 5 parallel API calls. Any non-401 failure (e.g. a 500 from a missing DB table) caused the entire promise to reject, `identity` stayed `null`, and the component returned `null` — blank black page. Fixed by switching to `Promise.allSettled` so the identity card always renders; only the main `/identities/{id}` call redirects to login on 401.
+
+Root cause in production: migration `017_client_roles_groups` had never been applied on the DOKS cluster (migrations were manual), so queries against `oauth2_client_roles` returned 500.
+
+#### Auto-migrations on deploy (`.github/workflows/deploy.yml`)
+Added a "Run migrations" step between image push and app rollout:
+```bash
+MIGRATE_IMAGE=${{ secrets.REGISTRY_HOST }}/minidm-migrate:${{ github.sha }}
+kubectl delete job minidm-migrate --ignore-not-found
+sed "s|image: .*minidm-migrate.*|image: $MIGRATE_IMAGE|" k8s/migrate-job.yaml | kubectl apply -f -
+kubectl wait --for=condition=complete job/minidm-migrate --timeout=180s
+```
+Uses the SHA-tagged migrator image so the exact binary matches the deploy. App rollout only proceeds if migrations succeed; rollback step fires on any failure.
+
+#### Migration job fixes (`k8s/migrate-job.yaml`)
+- **Wrong secret ref**: was `minidm-secrets/database-url` (key doesn't exist). Fixed to `minidm-pg-app/uri` — the secret CloudNativePG generates automatically for the app user.
+- **No cleanup**: added `ttlSecondsAfterFinished: 600` so completed/failed Jobs and their pods are garbage-collected after 10 minutes.
 
 ### Domain Separation Refactoring (completed 2026-06-18)
 Follow-up to PR #33. `identity.Service` had accumulated session and OAuth2 client-role operations that belong in other domains. Moved each to its owner.
