@@ -8,17 +8,12 @@ import (
 	"minIDM/internal/audit"
 )
 
-// API holds all OAuth2 handlers and is the mount point for all routes.
+// API holds all OAuth2 services and protocol handlers.
 type API struct {
-	q            *db.Queries
-	createClient *CreateClientHandler
-	listClients  *ListClientsHandler
-	getClient    *GetClientHandler
-	updateClient *UpdateClientHandler
-	deleteClient *DeleteClientHandler
-	rotateSecret *RotateSecretHandler
-	listTokens   *ListTokensHandler
-	revokeToken  *RevokeTokenHandler
+	clients      *ClientService
+	tokens       *TokenService
+	roles        *RoleService
+	groups       *GroupService
 	inspectToken *InspectTokenHandler
 	authorize    *AuthorizeHandler
 	consent      *ConsentHandler
@@ -29,17 +24,10 @@ type API struct {
 	userinfo     *UserinfoHandler
 	discovery    *DiscoveryHandler
 	jwks         *JWKSHandler
-	roles        *clientRoleOps
-	groups       *clientGroupOps
 	auditor      *audit.Auditor
 }
 
 // Register wires up all OAuth2 routes into mux.
-//
-//   - Public (no auth): /.well-known/openid-configuration, /oauth2/jwks.json,
-//     POST /oauth2/token, GET /oauth2/userinfo
-//   - Session-gated: GET /oauth2/authorize (handler checks session itself)
-//   - Admin API (RBAC): /api/oauth2/clients
 func Register(
 	mux *http.ServeMux,
 	q *db.Queries,
@@ -51,15 +39,10 @@ func Register(
 	authenticate func(http.Handler) http.Handler,
 ) {
 	api := &API{
-		q:            q,
-		createClient: NewCreateClientHandler(q),
-		listClients:  NewListClientsHandler(q),
-		getClient:    NewGetClientHandler(q),
-		updateClient: NewUpdateClientHandler(q),
-		deleteClient: NewDeleteClientHandler(q),
-		rotateSecret: NewRotateSecretHandler(q),
-		listTokens:   NewListTokensHandler(q),
-		revokeToken:  NewRevokeTokenHandler(q),
+		clients:      NewClientService(q),
+		tokens:       NewTokenService(q),
+		roles:        &RoleService{q: q},
+		groups:       &GroupService{q: q},
 		inspectToken: NewInspectTokenHandler(q, key, issuer),
 		authorize:    NewAuthorizeHandler(q, key),
 		consent:      NewConsentHandler(q, key),
@@ -70,8 +53,6 @@ func Register(
 		userinfo:     NewUserinfoHandler(q, key, issuer),
 		discovery:    NewDiscoveryHandler(issuer),
 		jwks:         NewJWKSHandler(key),
-		roles:        &clientRoleOps{q: q},
-		groups:       &clientGroupOps{q: q},
 		auditor:      auditor,
 	}
 
@@ -86,7 +67,7 @@ func Register(
 	mux.Handle("POST /oauth2/revoke", api.revoke)
 	mux.Handle("GET /oauth2/userinfo", api.userinfo)
 
-	// Consent: public client info (for consent page display) + session-gated approval
+	// Consent: public client info + session-gated approval
 	mux.Handle("GET /api/oauth2/client-info", api.clientInfo)
 	mux.Handle("POST /api/oauth2/consent", authenticate(api.consent))
 

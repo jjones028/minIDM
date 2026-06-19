@@ -11,36 +11,14 @@ import (
 )
 
 type API struct {
-	listRoles            *ListRolesHandler
-	createRole           *CreateRoleHandler
-	updateRole           *UpdateRoleHandler
-	deleteRole           *DeleteRoleHandler
-	listRolePermissions  *ListRolePermissionsHandler
-	addRolePermission    *AddRolePermissionHandler
-	removeRolePermission *RemoveRolePermissionHandler
-	listResources        *ListResourcesHandler
-	listActions          *ListActionsHandler
-	listIdentityRoles    *ListIdentityRolesHandler
-	assignRole           *AssignRoleHandler
-	removeRole           *RemoveRoleHandler
-	auditor              *audit.Auditor
+	svc     *Service
+	auditor *audit.Auditor
 }
 
 func RegisterRoleRoutes(mux *http.ServeMux, q *db.Queries, protectRead, protectWrite func(http.Handler) http.Handler, auditor *audit.Auditor) {
 	api := &API{
-		listRoles:            NewListRolesHandler(q),
-		createRole:           NewCreateRoleHandler(q),
-		updateRole:           NewUpdateRoleHandler(q),
-		deleteRole:           NewDeleteRoleHandler(q),
-		listRolePermissions:  NewListRolePermissionsHandler(q),
-		addRolePermission:    NewAddRolePermissionHandler(q),
-		removeRolePermission: NewRemoveRolePermissionHandler(q),
-		listResources:        NewListResourcesHandler(q),
-		listActions:          NewListActionsHandler(q),
-		listIdentityRoles:    NewListIdentityRolesHandler(q),
-		assignRole:           NewAssignRoleHandler(q),
-		removeRole:           NewRemoveRoleHandler(q),
-		auditor:              auditor,
+		svc:     NewService(q),
+		auditor: auditor,
 	}
 
 	mux.Handle("GET /api/roles", protectRead(http.HandlerFunc(api.ListRoles)))
@@ -58,58 +36,12 @@ func RegisterRoleRoutes(mux *http.ServeMux, q *db.Queries, protectRead, protectW
 }
 
 func (a *API) ListRoles(w http.ResponseWriter, r *http.Request) {
-	roles, err := a.listRoles.Handle(r.Context())
+	roles, err := a.svc.ListRoles(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	httputil.WriteJSON(w, roles)
-}
-
-func (a *API) ListIdentityRoles(w http.ResponseWriter, r *http.Request) {
-	id, err := httputil.ParseUUID(r.PathValue("id"))
-	if err != nil {
-		http.Error(w, "invalid_id", http.StatusBadRequest)
-		return
-	}
-	roles, err := a.listIdentityRoles.Handle(r.Context(), id)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	httputil.WriteJSON(w, roles)
-}
-
-func (a *API) AssignRole(w http.ResponseWriter, r *http.Request) {
-	identityID, err := httputil.ParseUUID(r.PathValue("id"))
-	if err != nil {
-		http.Error(w, "invalid_id", http.StatusBadRequest)
-		return
-	}
-	var req struct {
-		RoleID string `json:"role_id"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid_request", http.StatusBadRequest)
-		return
-	}
-	roleID, err := httputil.ParseUUID(req.RoleID)
-	if err != nil {
-		http.Error(w, "invalid_role_id", http.StatusBadRequest)
-		return
-	}
-	if err := a.assignRole.Handle(r.Context(), AssignRoleCommand{
-		IdentityID: identityID,
-		RoleID:     roleID,
-	}); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	actorID, _ := IdentityFromContext(r.Context())
-	a.auditor.Log(r.Context(), actorID, "identity.role.assign", "identity", audit.UUIDStr(identityID), map[string]any{
-		"role_id": req.RoleID,
-	})
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *API) CreateRole(w http.ResponseWriter, r *http.Request) {
@@ -125,10 +57,7 @@ func (a *API) CreateRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name_required", http.StatusUnprocessableEntity)
 		return
 	}
-	role, err := a.createRole.Handle(r.Context(), CreateRoleCommand{
-		Name:        req.Name,
-		Description: req.Description,
-	})
+	role, err := a.svc.CreateRole(r.Context(), req.Name, req.Description)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -158,11 +87,7 @@ func (a *API) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name_required", http.StatusUnprocessableEntity)
 		return
 	}
-	role, err := a.updateRole.Handle(r.Context(), UpdateRoleCommand{
-		ID:          id,
-		Name:        req.Name,
-		Description: req.Description,
-	})
+	role, err := a.svc.UpdateRole(r.Context(), id, req.Name, req.Description)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -180,7 +105,7 @@ func (a *API) DeleteRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	if err := a.deleteRole.Handle(r.Context(), DeleteRoleCommand{ID: id}); err != nil {
+	if err := a.svc.DeleteRole(r.Context(), id); err != nil {
 		if errors.Is(err, ErrNotFound) {
 			http.Error(w, "not_found", http.StatusNotFound)
 			return
@@ -197,56 +122,13 @@ func (a *API) DeleteRole(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (a *API) RemoveRole(w http.ResponseWriter, r *http.Request) {
-	identityID, err := httputil.ParseUUID(r.PathValue("id"))
-	if err != nil {
-		http.Error(w, "invalid_id", http.StatusBadRequest)
-		return
-	}
-	roleID, err := httputil.ParseUUID(r.PathValue("roleId"))
-	if err != nil {
-		http.Error(w, "invalid_role_id", http.StatusBadRequest)
-		return
-	}
-	if err := a.removeRole.Handle(r.Context(), RemoveRoleCommand{
-		IdentityID: identityID,
-		RoleID:     roleID,
-	}); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	actorID, _ := IdentityFromContext(r.Context())
-	a.auditor.Log(r.Context(), actorID, "identity.role.remove", "identity", audit.UUIDStr(identityID), map[string]any{
-		"role_id": audit.UUIDStr(roleID),
-	})
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (a *API) ListResources(w http.ResponseWriter, r *http.Request) {
-	resources, err := a.listResources.Handle(r.Context())
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	httputil.WriteJSON(w, resources)
-}
-
-func (a *API) ListActions(w http.ResponseWriter, r *http.Request) {
-	actions, err := a.listActions.Handle(r.Context())
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	httputil.WriteJSON(w, actions)
-}
-
 func (a *API) ListRolePermissions(w http.ResponseWriter, r *http.Request) {
 	id, err := httputil.ParseUUID(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	perms, err := a.listRolePermissions.Handle(r.Context(), id)
+	perms, err := a.svc.ListRolePermissions(r.Context(), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -278,11 +160,7 @@ func (a *API) AddRolePermission(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_action_id", http.StatusBadRequest)
 		return
 	}
-	perm, err := a.addRolePermission.Handle(r.Context(), AddRolePermissionCommand{
-		RoleID:     roleID,
-		ResourceID: resourceID,
-		ActionID:   actionID,
-	})
+	perm, err := a.svc.AddRolePermission(r.Context(), roleID, resourceID, actionID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			http.Error(w, "not_found", http.StatusNotFound)
@@ -314,10 +192,7 @@ func (a *API) RemoveRolePermission(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_perm_id", http.StatusBadRequest)
 		return
 	}
-	if err := a.removeRolePermission.Handle(r.Context(), RemoveRolePermissionCommand{
-		ID:     permID,
-		RoleID: roleID,
-	}); err != nil {
+	if err := a.svc.RemoveRolePermission(r.Context(), permID, roleID); err != nil {
 		if errors.Is(err, ErrNotFound) {
 			http.Error(w, "not_found", http.StatusNotFound)
 			return
@@ -332,6 +207,89 @@ func (a *API) RemoveRolePermission(w http.ResponseWriter, r *http.Request) {
 	actorID, _ := IdentityFromContext(r.Context())
 	a.auditor.Log(r.Context(), actorID, "role.permission.remove", "role", audit.UUIDStr(roleID), map[string]any{
 		"permission_id": audit.UUIDStr(permID),
+	})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *API) ListResources(w http.ResponseWriter, r *http.Request) {
+	resources, err := a.svc.ListResources(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	httputil.WriteJSON(w, resources)
+}
+
+func (a *API) ListActions(w http.ResponseWriter, r *http.Request) {
+	actions, err := a.svc.ListActions(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	httputil.WriteJSON(w, actions)
+}
+
+func (a *API) ListIdentityRoles(w http.ResponseWriter, r *http.Request) {
+	id, err := httputil.ParseUUID(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "invalid_id", http.StatusBadRequest)
+		return
+	}
+	roles, err := a.svc.ListIdentityRoles(r.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	httputil.WriteJSON(w, roles)
+}
+
+func (a *API) AssignRole(w http.ResponseWriter, r *http.Request) {
+	identityID, err := httputil.ParseUUID(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "invalid_id", http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		RoleID string `json:"role_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid_request", http.StatusBadRequest)
+		return
+	}
+	roleID, err := httputil.ParseUUID(req.RoleID)
+	if err != nil {
+		http.Error(w, "invalid_role_id", http.StatusBadRequest)
+		return
+	}
+	if err := a.svc.AssignRole(r.Context(), identityID, roleID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	actorID, _ := IdentityFromContext(r.Context())
+	a.auditor.Log(r.Context(), actorID, "identity.role.assign", "identity", audit.UUIDStr(identityID), map[string]any{
+		"role_id": req.RoleID,
+	})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *API) RemoveRole(w http.ResponseWriter, r *http.Request) {
+	identityID, err := httputil.ParseUUID(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "invalid_id", http.StatusBadRequest)
+		return
+	}
+	roleID, err := httputil.ParseUUID(r.PathValue("roleId"))
+	if err != nil {
+		http.Error(w, "invalid_role_id", http.StatusBadRequest)
+		return
+	}
+	if err := a.svc.RemoveRole(r.Context(), identityID, roleID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	actorID, _ := IdentityFromContext(r.Context())
+	a.auditor.Log(r.Context(), actorID, "identity.role.remove", "identity", audit.UUIDStr(identityID), map[string]any{
+		"role_id": audit.UUIDStr(roleID),
 	})
 	w.WriteHeader(http.StatusNoContent)
 }

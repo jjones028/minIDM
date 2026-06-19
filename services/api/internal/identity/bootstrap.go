@@ -3,6 +3,7 @@ package identity
 import (
 	"context"
 	"fmt"
+
 	db "minIDM/db/sqlc"
 )
 
@@ -17,8 +18,8 @@ func Bootstrap(ctx context.Context, q *db.Queries, email, password string) error
 		return nil
 	}
 
-	h := NewAddRegistrationHandler(q, true)
-	if _, err := h.Handle(ctx, AddRegistrationCommand{Email: email, Password: password}); err != nil {
+	svc := NewService(q, true)
+	if _, err := svc.Register(ctx, email, password); err != nil {
 		return fmt.Errorf("creating bootstrap admin: %w", err)
 	}
 	fmt.Printf("Bootstrap admin created: %s\n", email)

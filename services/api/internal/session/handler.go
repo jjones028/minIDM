@@ -3,24 +3,23 @@ package session
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
+
 	db "minIDM/db/sqlc"
 	"minIDM/internal/audit"
-	"net/http"
 )
 
 const cookieName = "session"
 
 type API struct {
-	login         *LoginHandler
-	logout        *LogoutHandler
+	svc           *Service
 	secureCookies bool
 	auditor       *audit.Auditor
 }
 
 func Register(mux *http.ServeMux, queries *db.Queries, secureCookies bool, auditor *audit.Auditor) {
 	api := &API{
-		login:         NewLoginHandler(queries),
-		logout:        NewLogoutHandler(queries),
+		svc:           NewService(queries),
 		secureCookies: secureCookies,
 		auditor:       auditor,
 	}
@@ -38,10 +37,7 @@ func (a *API) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := a.login.Handle(r.Context(), LoginCommand{
-		Email:    req.Email,
-		Password: req.Password,
-	})
+	result, err := a.svc.Login(r.Context(), req.Email, req.Password)
 	if errors.Is(err, ErrInvalidCredentials) {
 		http.Error(w, "invalid_credentials", http.StatusUnauthorized)
 		return
@@ -62,7 +58,7 @@ func (a *API) Login(w http.ResponseWriter, r *http.Request) {
 		Value:    result.Token,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   a.secureCookies, // set SECURE_COOKIES=true in production (requires HTTPS)
+		Secure:   a.secureCookies,
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   int(sessionDuration.Seconds()),
 	})
@@ -71,7 +67,7 @@ func (a *API) Login(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) Logout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(cookieName); err == nil {
-		if result, _ := a.logout.Handle(r.Context(), LogoutCommand{Token: cookie.Value}); result != nil {
+		if result, _ := a.svc.Logout(r.Context(), cookie.Value); result != nil {
 			a.auditor.Log(r.Context(), result.IdentityID, "session.logout", "session", "", nil)
 		}
 	}

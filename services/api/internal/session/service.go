@@ -22,27 +22,26 @@ var (
 
 const sessionDuration = 24 * time.Hour
 
-type LoginCommand struct {
-	Email    string
-	Password string
-}
-
 type LoginResult struct {
 	Token      string
 	IdentityID pgtype.UUID
 	ExpiresAt  time.Time
 }
 
-type LoginHandler struct {
+type LogoutResult struct {
+	IdentityID pgtype.UUID
+}
+
+type Service struct {
 	q *db.Queries
 }
 
-func NewLoginHandler(q *db.Queries) *LoginHandler {
-	return &LoginHandler{q: q}
+func NewService(q *db.Queries) *Service {
+	return &Service{q: q}
 }
 
-func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (*LoginResult, error) {
-	ident, err := h.q.GetIdentityByEmail(ctx, cmd.Email)
+func (s *Service) Login(ctx context.Context, email, password string) (*LoginResult, error) {
+	ident, err := s.q.GetIdentityByEmail(ctx, email)
 	if err != nil {
 		return nil, ErrInvalidCredentials
 	}
@@ -51,7 +50,7 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (*LoginResu
 		return nil, ErrAccountNotActive
 	}
 
-	ok, err := identity.VerifyPassword(cmd.Password, ident.PwHash)
+	ok, err := identity.VerifyPassword(password, ident.PwHash)
 	if err != nil || !ok {
 		return nil, ErrInvalidCredentials
 	}
@@ -62,7 +61,7 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (*LoginResu
 	}
 
 	expiresAt := time.Now().Add(sessionDuration)
-	_, err = h.q.CreateSession(ctx, db.CreateSessionParams{
+	_, err = s.q.CreateSession(ctx, db.CreateSessionParams{
 		TokenHash:  hashSessionToken(token),
 		IdentityID: ident.ID,
 		ExpiresAt:  pgtype.Timestamptz{Time: expiresAt, Valid: true},
@@ -72,6 +71,16 @@ func (h *LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (*LoginResu
 	}
 
 	return &LoginResult{Token: token, IdentityID: ident.ID, ExpiresAt: expiresAt}, nil
+}
+
+func (s *Service) Logout(ctx context.Context, token string) (*LogoutResult, error) {
+	hash := hashSessionToken(token)
+	sess, err := s.q.GetSessionByToken(ctx, hash)
+	if err != nil {
+		_ = s.q.DeleteSession(ctx, hash)
+		return nil, nil
+	}
+	return &LogoutResult{IdentityID: sess.IdentityID}, s.q.DeleteSession(ctx, hash)
 }
 
 func generateToken() (string, error) {
