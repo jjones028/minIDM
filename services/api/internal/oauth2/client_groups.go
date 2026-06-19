@@ -35,6 +35,28 @@ func toClientGroupResponse(g db.Oauth2ClientGroup) clientGroupResponse {
 // GroupService manages per-client group definitions and membership.
 type GroupService struct{ q *db.Queries }
 
+func NewGroupService(q *db.Queries) *GroupService { return &GroupService{q: q} }
+
+// ListForIdentity returns all client group memberships for an identity.
+func (h *GroupService) ListForIdentity(ctx context.Context, identityID pgtype.UUID) ([]db.ListClientGroupsForIdentityRow, error) {
+	rows, err := h.q.ListClientGroupsForIdentity(ctx, identityID)
+	if err != nil {
+		return nil, err
+	}
+	if rows == nil {
+		rows = []db.ListClientGroupsForIdentityRow{}
+	}
+	return rows, nil
+}
+
+// RemoveFromIdentity removes an identity from a client group.
+func (h *GroupService) RemoveFromIdentity(ctx context.Context, identityID, groupID pgtype.UUID) error {
+	return h.q.RemoveIdentityFromClientGroup(ctx, db.RemoveIdentityFromClientGroupParams{
+		IdentityID: identityID,
+		GroupID:    groupID,
+	})
+}
+
 func (h *GroupService) listForClient(ctx context.Context, clientID pgtype.UUID) ([]db.Oauth2ClientGroup, error) {
 	rows, err := h.q.ListClientGroups(ctx, clientID)
 	if err != nil {

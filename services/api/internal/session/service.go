@@ -10,7 +10,7 @@ import (
 	"time"
 
 	db "minIDM/db/sqlc"
-	"minIDM/internal/identity"
+	"minIDM/internal/password"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -18,6 +18,7 @@ import (
 var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
 	ErrAccountNotActive   = errors.New("account not active")
+	ErrSessionNotFound    = errors.New("session not found")
 )
 
 const sessionDuration = 24 * time.Hour
@@ -40,7 +41,7 @@ func NewService(q *db.Queries) *Service {
 	return &Service{q: q}
 }
 
-func (s *Service) Login(ctx context.Context, email, password string) (*LoginResult, error) {
+func (s *Service) Login(ctx context.Context, email, pw string) (*LoginResult, error) {
 	ident, err := s.q.GetIdentityByEmail(ctx, email)
 	if err != nil {
 		return nil, ErrInvalidCredentials
@@ -50,7 +51,7 @@ func (s *Service) Login(ctx context.Context, email, password string) (*LoginResu
 		return nil, ErrAccountNotActive
 	}
 
-	ok, err := identity.VerifyPassword(password, ident.PwHash)
+	ok, err := password.Verify(pw, ident.PwHash)
 	if err != nil || !ok {
 		return nil, ErrInvalidCredentials
 	}
@@ -83,6 +84,28 @@ func (s *Service) Logout(ctx context.Context, token string) (*LogoutResult, erro
 	return &LogoutResult{IdentityID: sess.IdentityID}, s.q.DeleteSession(ctx, hash)
 }
 
+func (s *Service) ListForIdentity(ctx context.Context, identityID pgtype.UUID) ([]db.Session, error) {
+	return s.q.ListActiveSessionsByIdentityID(ctx, identityID)
+}
+
+func (s *Service) RevokeByHandle(ctx context.Context, identityID pgtype.UUID, handle string) error {
+	sessions, err := s.q.ListActiveSessionsByIdentityID(ctx, identityID)
+	if err != nil {
+		return err
+	}
+	for _, sess := range sessions {
+		if SessionHandle(sess.TokenHash) == handle {
+			return s.q.DeleteSession(ctx, sess.TokenHash)
+		}
+	}
+	return ErrSessionNotFound
+}
+
+// SessionHandle returns the first 8 hex chars of a token_hash as a safe opaque handle.
+func SessionHandle(tokenHash string) string {
+	return tokenHash[:8]
+}
+
 func generateToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -92,7 +115,6 @@ func generateToken() (string, error) {
 }
 
 // hashSessionToken returns the hex SHA-256 of a session token for safe DB storage.
-// The plaintext token stays in the cookie; only the hash is persisted.
 func hashSessionToken(token string) string {
 	h := sha256.Sum256([]byte(token))
 	return fmt.Sprintf("%x", h[:])

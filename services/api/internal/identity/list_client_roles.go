@@ -32,7 +32,7 @@ func (a *API) ListIdentityClientRoles(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	rows, err := a.svc.ListClientRoles(r.Context(), id)
+	rows, err := a.roles.ListForIdentity(r.Context(), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -65,7 +65,7 @@ func (a *API) RemoveIdentityClientRole(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_role_id", http.StatusBadRequest)
 		return
 	}
-	if err := a.svc.RemoveClientRole(r.Context(), identityID, roleID); err != nil {
+	if err := a.roles.RemoveFromIdentity(r.Context(), identityID, roleID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -78,7 +78,7 @@ func (a *API) ListIdentityClientGroups(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_id", http.StatusBadRequest)
 		return
 	}
-	rows, err := a.svc.ListClientGroups(r.Context(), id)
+	rows, err := a.groups.ListForIdentity(r.Context(), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -111,7 +111,7 @@ func (a *API) RemoveIdentityClientGroup(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "invalid_group_id", http.StatusBadRequest)
 		return
 	}
-	if err := a.svc.RemoveClientGroup(r.Context(), identityID, groupID); err != nil {
+	if err := a.groups.RemoveFromIdentity(r.Context(), identityID, groupID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

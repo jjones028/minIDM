@@ -35,6 +35,28 @@ func toClientRoleResponse(r db.Oauth2ClientRole) clientRoleResponse {
 // RoleService manages per-client role definitions and membership.
 type RoleService struct{ q *db.Queries }
 
+func NewRoleService(q *db.Queries) *RoleService { return &RoleService{q: q} }
+
+// ListForIdentity returns all direct client role assignments for an identity.
+func (h *RoleService) ListForIdentity(ctx context.Context, identityID pgtype.UUID) ([]db.ListDirectClientRolesForIdentityRow, error) {
+	rows, err := h.q.ListDirectClientRolesForIdentity(ctx, identityID)
+	if err != nil {
+		return nil, err
+	}
+	if rows == nil {
+		rows = []db.ListDirectClientRolesForIdentityRow{}
+	}
+	return rows, nil
+}
+
+// RemoveFromIdentity removes a direct client role assignment from an identity.
+func (h *RoleService) RemoveFromIdentity(ctx context.Context, identityID, roleID pgtype.UUID) error {
+	return h.q.RemoveIdentityFromClientRole(ctx, db.RemoveIdentityFromClientRoleParams{
+		IdentityID: identityID,
+		RoleID:     roleID,
+	})
+}
+
 func (h *RoleService) listForClient(ctx context.Context, clientID pgtype.UUID) ([]db.Oauth2ClientRole, error) {
 	rows, err := h.q.ListClientRoles(ctx, clientID)
 	if err != nil {
