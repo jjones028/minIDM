@@ -91,6 +91,7 @@ export const resetIdentityPassword = (identityId: string, password: string) =>
   api.post(`/identities/${identityId}/reset-password`, { password });
 export const setIdentityEnabled = (identityId: string, enabled: boolean) =>
   api.patch<{ id: string; is_enabled: boolean; updated_at: string }>(`/identities/${identityId}/enabled`, { enabled });
+export const deleteIdentity = (identityId: string) => api.delete(`/identities/${identityId}`);
 export const getIdentityRoles = (id: string) => api.get<Role[]>(`/identities/${id}/roles`);
 export const assignRole = (identityId: string, roleId: string) =>
   api.post(`/identities/${identityId}/roles`, { role_id: roleId });

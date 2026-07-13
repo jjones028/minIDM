@@ -27,3 +27,6 @@ UPDATE identities SET pw_hash = $2, updated_at = NOW() WHERE id = $1;
 -- name: UpdateIdentityEnabled :one
 UPDATE identities SET is_enabled = $2, updated_at = NOW() WHERE id = $1
 RETURNING id, subject_id, email, is_enabled, created_at, updated_at;
+
+-- name: DeleteIdentity :exec
+DELETE FROM identities WHERE id = $1;

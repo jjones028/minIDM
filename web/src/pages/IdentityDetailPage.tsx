@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import {
   getIdentity, getIdentityRoles, getIdentitySessions, revokeIdentitySession,
-  resetIdentityPassword, setIdentityEnabled,
+  resetIdentityPassword, setIdentityEnabled, deleteIdentity, getMe,
   listIdentityClientRoles, removeIdentityClientRole,
   listIdentityClientGroups, removeIdentityClientGroup,
   isUnauthorized, type Identity, type Role, type IdentitySession,
@@ -35,6 +35,8 @@ export default function IdentityDetailPage() {
   const [sessions, setSessions] = useState<IdentitySession[]>([]);
   const [revokingHandle, setRevokingHandle] = useState<string | null>(null);
   const [togglingEnabled, setTogglingEnabled] = useState(false);
+  const [currentIdentityId, setCurrentIdentityId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [clientRoles, setClientRoles] = useState<ClientRoleAssignment[]>([]);
   const [clientGroups, setClientGroups] = useState<ClientGroupMembership[]>([]);
   const [newPassword, setNewPassword] = useState('');
@@ -62,6 +64,10 @@ export default function IdentityDetailPage() {
     });
     return () => { cancelled = true; };
   }, [id]);
+
+  useEffect(() => {
+    getMe().then(({ data }) => setCurrentIdentityId(data.id)).catch(() => {});
+  }, []);
 
   async function handleRevoke(handle: string) {
     setRevokingHandle(handle);
@@ -127,7 +133,27 @@ export default function IdentityDetailPage() {
     }
   }
 
+  async function handleDelete() {
+    if (!identity) return;
+    if (!confirm(`Permanently delete ${identity.email}? This cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await deleteIdentity(id!);
+      navigate('/');
+    } catch (err) {
+      if (isUnauthorized(err)) { setAuthenticated(false); navigate('/login'); }
+      else {
+        const e = err as import('axios').AxiosError<string>;
+        alert('Failed to delete identity: ' + (e.response?.data?.trim() ?? e.message));
+      }
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   if (!identity) return null;
+
+  const isSelf = currentIdentityId !== null && currentIdentityId === identity.id;
 
   return (
     <div className="min-h-screen p-4 md:p-12">
@@ -379,6 +405,27 @@ export default function IdentityDetailPage() {
                 {resetting ? 'Resetting…' : 'Reset Password'}
               </Button>
             </form>
+          </CardContent>
+        </Card>
+
+        <Card className="border-destructive/50">
+          <CardHeader>
+            <CardTitle className="text-destructive">Danger Zone</CardTitle>
+            <CardDescription>
+              Permanently delete this identity and all associated sessions, role
+              assignments, and OAuth2 tokens. This action cannot be undone.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              variant="outline"
+              className="text-destructive border-destructive/50 hover:bg-destructive/10 hover:text-destructive"
+              disabled={deleting || isSelf}
+              title={isSelf ? 'You cannot delete your own identity' : undefined}
+              onClick={handleDelete}
+            >
+              {deleting ? 'Deleting…' : 'Delete Identity'}
+            </Button>
           </CardContent>
         </Card>
       </div>

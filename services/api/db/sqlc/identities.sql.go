@@ -55,6 +55,15 @@ func (q *Queries) CreateIdentity(ctx context.Context, arg CreateIdentityParams) 
 	return i, err
 }
 
+const deleteIdentity = `-- name: DeleteIdentity :exec
+DELETE FROM identities WHERE id = $1
+`
+
+func (q *Queries) DeleteIdentity(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteIdentity, id)
+	return err
+}
+
 const getIdentityByEmail = `-- name: GetIdentityByEmail :one
 SELECT id, subject_id, email, pw_hash, is_enabled, created_at, updated_at FROM identities
 WHERE email = $1 LIMIT 1
