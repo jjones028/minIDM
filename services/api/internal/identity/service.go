@@ -14,6 +14,7 @@ import (
 var (
 	ErrRegistrationDisabled = errors.New("registration is disabled")
 	ErrPasswordTooShort     = errors.New("password must be at least 8 characters")
+	ErrCannotDeleteSelf     = errors.New("cannot delete your own identity")
 )
 
 type AddRegistrationResult struct {
@@ -140,5 +141,12 @@ func (s *Service) SetEnabled(ctx context.Context, id pgtype.UUID, enabled bool) 
 		ID:        id,
 		IsEnabled: enabled,
 	})
+}
+
+func (s *Service) Delete(ctx context.Context, id, actorID pgtype.UUID) error {
+	if id.Valid && actorID.Valid && id.Bytes == actorID.Bytes {
+		return ErrCannotDeleteSelf
+	}
+	return s.q.DeleteIdentity(ctx, id)
 }
 

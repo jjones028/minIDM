@@ -55,6 +55,7 @@ func (a *API) RegisterRoutes(mux *http.ServeMux, protectRead, protectWrite func(
 	mux.Handle("DELETE /api/identities/{id}/sessions/{handle}", protectWrite(http.HandlerFunc(a.RevokeSession)))
 	mux.Handle("POST /api/identities/{id}/reset-password", protectWrite(http.HandlerFunc(a.ResetPassword)))
 	mux.Handle("PATCH /api/identities/{id}/enabled", protectWrite(http.HandlerFunc(a.SetEnabled)))
+	mux.Handle("DELETE /api/identities/{id}", protectWrite(http.HandlerFunc(a.Delete)))
 	mux.Handle("GET /api/identities/{id}/client-roles", protectRead(http.HandlerFunc(a.ListIdentityClientRoles)))
 	mux.Handle("DELETE /api/identities/{id}/client-roles/{roleId}", protectWrite(http.HandlerFunc(a.RemoveIdentityClientRole)))
 	mux.Handle("GET /api/identities/{id}/client-groups", protectRead(http.HandlerFunc(a.ListIdentityClientGroups)))
@@ -236,6 +237,29 @@ func (a *API) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	actorID, _ := rbac.IdentityFromContext(r.Context())
 	a.auditor.Log(r.Context(), actorID, "identity.password.reset", "identity", audit.UUIDStr(id), nil)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *API) Delete(w http.ResponseWriter, r *http.Request) {
+	id, err := httputil.ParseUUID(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "invalid_id", http.StatusBadRequest)
+		return
+	}
+	actorID, _ := rbac.IdentityFromContext(r.Context())
+	if err := a.svc.Delete(r.Context(), id, actorID); err != nil {
+		if errors.Is(err, ErrCannotDeleteSelf) {
+			http.Error(w, "cannot_delete_self", http.StatusForbidden)
+			return
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			http.Error(w, "not_found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	a.auditor.Log(r.Context(), actorID, "identity.delete", "identity", audit.UUIDStr(id), nil)
 	w.WriteHeader(http.StatusNoContent)
 }
 
