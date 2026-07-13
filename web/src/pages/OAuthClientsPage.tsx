@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   listOAuthClients, createOAuthClient, updateOAuthClient, deleteOAuthClient,
   rotateOAuthClientSecret,
@@ -497,12 +497,13 @@ export default function OAuthClientsPage() {
                             Rotate Secret
                           </Button>
                         )}
-                        <Link
-                          to={`/oauth2/clients/${client.id}`}
-                          className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 hover:bg-accent hover:text-accent-foreground h-9 px-3"
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => navigate(`/oauth2/clients/${client.id}`)}
                         >
                           Roles &amp; Groups
-                        </Link>
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"
