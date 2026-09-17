@@ -35,7 +35,20 @@ export default function AuthPage() {
     getConfig(clientId).then(({ data }) => setConfig(data)).catch(() => {});
   }, []);
 
-  if (checked && authenticated) return <Navigate to="/" replace />;
+  if (checked && authenticated) {
+    // Landing here already authenticated (e.g. a stale minIDM session cookie
+    // combined with a backend that decided otherwise, or simply revisiting
+    // /login while signed in) must still honor ?next= -- otherwise an OAuth2
+    // authorize redirect that bounced here silently drops the client back at
+    // minIDM's own dashboard instead of completing the flow. Native apps in
+    // particular have no other way back in: there's no second click to retry.
+    const next = searchParams.get('next');
+    if (next) {
+      window.location.href = next;
+      return null;
+    }
+    return <Navigate to="/" replace />;
+  }
 
   const switchTab = (next: Tab) => {
     setTab(next);
