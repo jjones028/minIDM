@@ -1,8 +1,10 @@
 # Run these commands once before the first deploy.
 # Fill in real values — never commit this file with secrets in it.
 #
-# DATABASE_URL is no longer set here — CloudNativePG generates the
-# minidm-pg-app secret automatically when the Cluster resource is applied.
+# DATABASE_URL is not set here — it lives in a separate minidm-db-app secret
+# pointing at the DigitalOcean Managed PostgreSQL cluster, created manually
+# (see DEPLOY.md step 4/6). There's no in-cluster database operator to
+# auto-generate it anymore.
 
 # ── 1. Generate the RSA signing key ───────────────────────────────────────────
 # The same key must persist across all pod restarts; generate it once and keep
