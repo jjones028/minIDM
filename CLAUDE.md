@@ -471,7 +471,7 @@ Disabled accounts could previously log in and exchange OAuth2 tokens:
 - `rbac/middleware.go` — `Authenticate` fetches the identity after session lookup and returns 401 if disabled
 
 #### DOKS deployment
-- `k8s/deployment.yaml` — Deployment + Service, Postgres StatefulSet, Traefik IngressRoutes (HTTP→HTTPS + TLS)
+- `k8s/deployment.yaml` — Deployment + Service, Traefik IngressRoutes (HTTP→HTTPS + TLS). Postgres no longer lives here — it moved to a DigitalOcean Managed PostgreSQL cluster (`apps-postgres`, shared with recipe-keeper), connected via the `minidm-db-app` secret instead of an in-cluster database.
 - `k8s/migrate-job.yaml` — one-off goose migration Job (triggered via GitHub Actions `migrate.yml`)
 - `k8s/secrets.example.sh`, `k8s/traefik-values.yaml` — cluster setup helpers
 - `Dockerfile` — `migrator` stage (goose + migration files) pushed as `minidm-migrate:latest`
@@ -584,7 +584,7 @@ kubectl wait --for=condition=complete job/minidm-migrate --timeout=180s
 Uses the SHA-tagged migrator image so the exact binary matches the deploy. App rollout only proceeds if migrations succeed; rollback step fires on any failure.
 
 #### Migration job fixes (`k8s/migrate-job.yaml`)
-- **Wrong secret ref**: was `minidm-secrets/database-url` (key doesn't exist). Fixed to `minidm-pg-app/uri` — the secret CloudNativePG generates automatically for the app user.
+- **Wrong secret ref**: was `minidm-secrets/database-url` (key doesn't exist). Fixed to `minidm-pg-app/uri` — the secret CloudNativePG generates automatically for the app user. (CNPG has since been retired in favor of a DigitalOcean Managed PostgreSQL cluster — this now reads `minidm-db-app/uri` instead, created manually. See "DOKS deployment" above.)
 - **No cleanup**: added `ttlSecondsAfterFinished: 600` so completed/failed Jobs and their pods are garbage-collected after 10 minutes.
 
 ### Domain Separation Refactoring (completed 2026-06-18)
@@ -615,6 +615,11 @@ Now owns only: `Register`, `Create`, `List`, `Get`, `SetEnabled`, `ResetPassword
 
 #### `identity.API` as coordination point
 `identity.Config` gains `Sessions *session.Service`, `Roles *oauth2.RoleService`, `Groups *oauth2.GroupService`. The HTTP handlers for `/api/identities/{id}/sessions` and `/api/identities/{id}/client-roles` call those services directly. `router.go` creates the shared service instances and passes them to both `identity.Config` and (implicitly, via their own construction) `oauth2.Register`.
+
+### Managed Postgres Migration + AuthPage `?next=` Fix (completed 2026-09-17)
+Postgres moved off the in-cluster CNPG `Cluster` to a DigitalOcean Managed PostgreSQL cluster (`apps-postgres`), shared with recipe-keeper as a separate database — see "DOKS deployment" above. Same root motivation as recipe-keeper's side of this: CNPG had zero resource requests set, which was starving the cluster's CNI under load; offloading Postgres also gets automated daily backups for the first time (the CNPG `Cluster` had no backup config at all).
+
+While debugging recipe-keeper's native (Capacitor/Android) login against this instance, found a real bug in `AuthPage.tsx`: the early-return for an already-authenticated visit to `/login` hardcoded a redirect to `/`, silently dropping `?next=` — unlike the post-submit login success path, which already handled it correctly. This meant any OAuth2 client (not just recipe-keeper's native app) bounced to `/login?next=/oauth2/authorize...` because the session cookie `AuthorizeHandler` checks was invalid, while the frontend's own cached `authenticated` state said otherwise, got dropped at minIDM's own dashboard instead of completing the redirect back to the client. Fixed to honor `?next=` in both cases.
 
 ## Next Steps for the Next AI
 
